@@ -92,5 +92,8 @@ abstract interface class GameRules {
     String targetPositionId,
   );
 
+  /// Evaluates remaining pieces / win conditions for [state].
+  GameStatus checkGameOver(GameState state);
+
   UndoResult undoLastMove(GameState state);
 }

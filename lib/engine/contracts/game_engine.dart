@@ -22,6 +22,9 @@ abstract interface class GameEngine {
   /// Validates and executes moving [pieceId] to [targetPosition].
   MoveResult makeMove(String pieceId, String targetPosition);
 
+  /// Checks remaining pieces and returns the current [GameStatus] (`playing`, `A_won`, `B_won`).
+  GameStatus checkGameOver();
+
   /// Reverts the most recently executed move if one exists.
   UndoResult undoMove();
 

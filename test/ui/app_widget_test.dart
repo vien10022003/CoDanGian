@@ -173,6 +173,11 @@ void main() {
             owner: PlayerSide.b,
             positionId: 'r2_c1',
           ),
+          'B_03': GamePiece(
+            id: 'B_03',
+            owner: PlayerSide.b,
+            positionId: 'r4_c4',
+          ),
         },
         currentTurn: PlayerSide.a,
         turnOrder: const [PlayerSide.a, PlayerSide.b],
@@ -236,6 +241,74 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('piece_B_02')), findsOneWidget);
       expect(find.text('Ăn tiếp A'), findsOneWidget);
+    });
+
+    testWidgets('shows victory dialog, winner banner, and replays fresh match', (tester) async {
+      final nearWinState = GameState(
+        gameTypeId: CoChemRules.typeId,
+        board: CoChemBoard.createBoardGraph(),
+        pieces: const {
+          'A_01': GamePiece(
+            id: 'A_01',
+            owner: PlayerSide.a,
+            positionId: 'r0_c0',
+          ),
+          'B_01': GamePiece(
+            id: 'B_01',
+            owner: PlayerSide.b,
+            positionId: 'r1_c0',
+          ),
+        },
+        currentTurn: PlayerSide.a,
+        turnOrder: const [PlayerSide.a, PlayerSide.b],
+      );
+
+      final customRegistry = FolkGameRegistry(
+        games: [
+          FolkGameDescriptor(
+            id: CoChemRules.typeId,
+            name: 'Cờ Chém',
+            tagline: 'Test',
+            description: 'Test',
+            boardSummary: '5×5',
+            playerModeLabel: '2 người chơi',
+            isPlayable: true,
+            createEngine: () => createCoChemEngine(initialState: nearWinState),
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(CoDanGianApp(registry: customRegistry));
+      await tester.tap(find.text('Cờ Chém'));
+      await tester.pumpAndSettle();
+
+      // Capture final Side B piece
+      await tester.tap(find.byKey(const ValueKey('node_r0_c0')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('node_r2_c0')));
+      await tester.pumpAndSettle();
+
+      // Victory dialog displays winner name and replay options
+      expect(find.text('Chiến thắng!'), findsOneWidget);
+      expect(find.text('Người chơi A (Đỏ) thắng cuộc!'), findsOneWidget);
+      expect(find.text('Xem bàn cờ'), findsOneWidget);
+
+      // Dismiss dialog to inspect board & verify persistent winner banner
+      await tester.tap(find.text('Xem bàn cờ'));
+      await tester.pumpAndSettle();
+      expect(find.text('A thắng'), findsOneWidget);
+      expect(
+        find.text('Chiến thắng! Người chơi A (Đỏ) thắng cuộc!'),
+        findsOneWidget,
+      );
+
+      // Tap Replay -> resets immediately without confirmation dialog to standard 20 pieces
+      await tester.tap(find.text('Chơi lại'));
+      await tester.pumpAndSettle();
+      expect(find.text('Lượt A'), findsOneWidget);
+      expect(find.text('Nước 0'), findsOneWidget);
+      expect(find.byKey(const ValueKey('piece_A_01')), findsOneWidget);
+      expect(find.byKey(const ValueKey('piece_B_10')), findsOneWidget);
     });
   });
 }

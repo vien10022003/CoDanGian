@@ -2,16 +2,17 @@ import '../../contracts/game_engine.dart';
 import '../../contracts/game_rules.dart';
 import '../../models/game_state.dart';
 import '../../models/player_side.dart';
+import '../elimination_win_condition.dart';
 import '../jump_capture_rule.dart';
 import '../standard_graph_game_engine.dart';
 import 'co_chem_board.dart';
 
 /// Rule implementation for Cờ Chém (board layout, basic movement, jump capture,
-/// and mandatory multi-capture chains).
+/// mandatory multi-capture chains, and elimination win condition).
 class CoChemRules extends StandardAdjacentGameRules {
   const CoChemRules({
     super.captureRule = const JumpCaptureRule(),
-    super.winConditionRule = const OngoingWinConditionRule(),
+    super.winConditionRule = const EliminationWinConditionRule(),
   });
 
   static const String typeId = 'co_chem';
@@ -34,7 +35,7 @@ class CoChemRules extends StandardAdjacentGameRules {
 /// Convenience factory creating an initialized Cờ Chém [GameEngine].
 GameEngine createCoChemEngine({
   CaptureRule captureRule = const JumpCaptureRule(),
-  WinConditionRule winConditionRule = const OngoingWinConditionRule(),
+  WinConditionRule winConditionRule = const EliminationWinConditionRule(),
   GameState? initialState,
 }) {
   return StandardGraphGameEngine(

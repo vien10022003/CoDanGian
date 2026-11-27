@@ -9,6 +9,25 @@ enum GamePhase {
   finished,
 }
 
+/// High-level outcome status of a 2-player match (`playing`, `A_won`, `B_won`).
+enum GameStatus {
+  playing('playing'),
+  aWon('A_won'),
+  bWon('B_won');
+
+  const GameStatus(this.code);
+
+  /// Exact serialized status string (`'playing'`, `'A_won'`, `'B_won'`).
+  final String code;
+
+  static GameStatus? fromCode(String? code) {
+    for (final status in values) {
+      if (status.code == code) return status;
+    }
+    return null;
+  }
+}
+
 /// Complete, immutable, serializable snapshot of a board game match.
 ///
 /// Guarantees consistency between [pieces] and [occupancy]: every non-captured
@@ -146,6 +165,14 @@ class GameState {
 
   bool get isGameOver => phase == GamePhase.finished;
 
+  /// Current game status (`playing`, `A_won`, `B_won`).
+  GameStatus get gameStatus {
+    if (phase == GamePhase.playing) return GameStatus.playing;
+    if (winner == PlayerSide.a) return GameStatus.aWon;
+    if (winner == PlayerSide.b) return GameStatus.bWon;
+    return GameStatus.playing;
+  }
+
   /// Returns the next player in [turnOrder] after [current].
   PlayerSide nextPlayerAfter(PlayerSide current) {
     final idx = turnOrder.indexOf(current);
@@ -193,6 +220,19 @@ class GameState {
         .map((e) => GameMove.fromJson(e as Map<String, dynamic>))
         .toList();
 
+    final parsedStatus = GameStatus.fromCode(json['gameStatus'] as String?);
+    var phase = GamePhase.values.byName(
+      (json['phase'] as String?) ?? GamePhase.playing.name,
+    );
+    var winner =
+        json['winner'] == null ? null : PlayerSide.fromJson(json['winner']);
+
+    if (parsedStatus != null && parsedStatus != GameStatus.playing) {
+      phase = GamePhase.finished;
+      winner ??=
+          parsedStatus == GameStatus.aWon ? PlayerSide.a : PlayerSide.b;
+    }
+
     return GameState(
       gameTypeId: json['gameTypeId'] as String,
       board: board,
@@ -201,10 +241,8 @@ class GameState {
       turnOrder: turnOrder,
       moveHistory: moveHistory,
       activeChainPieceId: json['activeChainPieceId'] as String?,
-      phase: GamePhase.values.byName(
-        (json['phase'] as String?) ?? GamePhase.playing.name,
-      ),
-      winner: json['winner'] == null ? null : PlayerSide.fromJson(json['winner']),
+      phase: phase,
+      winner: winner,
     );
   }
 
@@ -217,6 +255,7 @@ class GameState {
         'moveHistory': moveHistory.map((m) => m.toJson()).toList(),
         'activeChainPieceId': activeChainPieceId,
         'phase': phase.name,
+        'gameStatus': gameStatus.code,
         'winner': winner?.toJson(),
       };
 }

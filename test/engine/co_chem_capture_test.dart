@@ -172,6 +172,12 @@ void main() {
             owner: PlayerSide.b,
             positionId: 'r2_c1',
           ),
+          // Keep an extra B piece on board so match stays ongoing after 2-step chain
+          'B_03': GamePiece(
+            id: 'B_03',
+            owner: PlayerSide.b,
+            positionId: 'r4_c4',
+          ),
         },
       );
 

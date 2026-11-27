@@ -7,6 +7,7 @@ import '../widgets/game_board_widget.dart';
 import '../widgets/move_history_sheet.dart';
 import '../widgets/player_turn_bar.dart';
 import '../widgets/rules_dialog.dart';
+import '../widgets/victory_dialog.dart';
 import '../widgets/viet_background.dart';
 
 /// Main local 2-player match screen powered by a [GameEngine].
@@ -26,17 +27,43 @@ class GamePlayScreen extends StatefulWidget {
 
 class _GamePlayScreenState extends State<GamePlayScreen> {
   late final GameController _controller;
+  bool _victoryDialogShown = false;
 
   @override
   void initState() {
     super.initState();
     _controller = GameController(engine: widget.engine);
+    _controller.addListener(_onControllerChanged);
+    if (_controller.isGameOver) {
+      _victoryDialogShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _controller.isGameOver) {
+          _showVictoryDialog(_controller.state);
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  void _onControllerChanged() {
+    if (_controller.isGameOver) {
+      if (!_victoryDialogShown) {
+        _victoryDialogShown = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _controller.isGameOver) {
+            _showVictoryDialog(_controller.state);
+          }
+        });
+      }
+    } else {
+      _victoryDialogShown = false;
+    }
   }
 
   @override
@@ -90,9 +117,7 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
           const SizedBox(height: 10),
           _StatusHintBanner(
             hint: _controller.statusHint,
-            currentTurn: state.currentTurn,
-            lastMove: state.lastMove,
-            board: state.board,
+            state: state,
           ),
           const SizedBox(height: 10),
           Expanded(
@@ -148,9 +173,7 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
                 const SizedBox(height: 14),
                 _StatusHintBanner(
                   hint: _controller.statusHint,
-                  currentTurn: state.currentTurn,
-                  lastMove: state.lastMove,
-                  board: state.board,
+                  state: state,
                 ),
                 const SizedBox(height: 18),
                 _ActionControlsBar(
@@ -184,8 +207,18 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
     );
   }
 
+  Future<void> _showVictoryDialog(GameState state) async {
+    final replay = await showDialog<bool>(
+      context: context,
+      builder: (_) => VictoryDialog(state: state),
+    );
+    if (replay == true && mounted) {
+      _controller.resetGame();
+    }
+  }
+
   Future<void> _confirmReset(BuildContext context) async {
-    if (!_controller.hasMoves) {
+    if (!_controller.hasMoves || _controller.isGameOver) {
       _controller.resetGame();
       return;
     }
@@ -229,30 +262,34 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
 class _StatusHintBanner extends StatelessWidget {
   const _StatusHintBanner({
     required this.hint,
-    required this.currentTurn,
-    required this.lastMove,
-    required this.board,
+    required this.state,
   });
 
   final String? hint;
-  final PlayerSide currentTurn;
-  final GameMove? lastMove;
-  final BoardGraph board;
+  final GameState state;
 
   @override
   Widget build(BuildContext context) {
+    final isGameOver = state.isGameOver;
+    final winner = state.winner;
+    final lastMove = state.lastMove;
+
     final String message;
-    if (hint != null) {
+    if (isGameOver && winner != null) {
+      message =
+          'Chiến thắng! ${GameController.playerDisplayName(winner)} thắng cuộc!';
+    } else if (hint != null) {
       message = hint!;
     } else if (lastMove != null) {
-      final move = lastMove!;
-      final from = board.positionById(move.fromPositionId)?.label ?? move.fromPositionId;
-      final to = board.positionById(move.toPositionId)?.label ?? move.toPositionId;
+      final from = state.board.positionById(lastMove.fromPositionId)?.label ??
+          lastMove.fromPositionId;
+      final to = state.board.positionById(lastMove.toPositionId)?.label ??
+          lastMove.toPositionId;
       message =
-          'Vừa đi: Phe ${move.player.id} ($from → $to) · Tới lượt ${GameController.playerDisplayName(currentTurn)}';
+          'Vừa đi: Phe ${lastMove.player.id} ($from → $to) · Tới lượt ${GameController.playerDisplayName(state.currentTurn)}';
     } else {
       message =
-          '${GameController.playerDisplayName(currentTurn)} đi trước · Chạm quân cờ để chọn nước đi';
+          '${GameController.playerDisplayName(state.currentTurn)} đi trước · Chạm quân cờ để chọn nước đi';
     }
 
     return Container(
@@ -260,21 +297,43 @@ class _StatusHintBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        color: Colors.black.withValues(alpha: 0.28),
+        color: isGameOver
+            ? VietTheme.bronzeGold.withValues(alpha: 0.22)
+            : Colors.black.withValues(alpha: 0.28),
         border: Border.all(
-          color: VietTheme.bronzeGold.withValues(alpha: 0.25),
+          color: isGameOver
+              ? VietTheme.bronzeGoldLight
+              : VietTheme.bronzeGold.withValues(alpha: 0.25),
+          width: isGameOver ? 1.5 : 1.0,
         ),
       ),
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: VietTheme.parchmentSoft,
-          fontSize: 12.5,
-          fontWeight: FontWeight.w500,
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (isGameOver) ...[
+            const Icon(
+              Icons.emoji_events_rounded,
+              color: VietTheme.bronzeGoldLight,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isGameOver
+                    ? VietTheme.bronzeGoldLight
+                    : VietTheme.parchmentSoft,
+                fontSize: isGameOver ? 13 : 12.5,
+                fontWeight: isGameOver ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

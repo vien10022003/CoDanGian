@@ -354,6 +354,17 @@ abstract class StandardAdjacentGameRules implements GameRules {
 
     return UndoResult.success(state: restoredState, undoneMove: lastMove);
   }
+
+  @override
+  GameStatus checkGameOver(GameState state) {
+    final eval = winConditionRule.evaluate(state);
+    if (!eval.isFinished) {
+      return GameStatus.playing;
+    }
+    if (eval.winner == PlayerSide.a) return GameStatus.aWon;
+    if (eval.winner == PlayerSide.b) return GameStatus.bWon;
+    return state.gameStatus;
+  }
 }
 
 /// Stateful [GameEngine] implementation backed by a [GameRules] strategy.
@@ -399,6 +410,20 @@ class StandardGraphGameEngine implements GameEngine {
       _state = result.state;
     }
     return result;
+  }
+
+  @override
+  GameStatus checkGameOver() {
+    final status = _rules.checkGameOver(_state);
+    if (status != GameStatus.playing && !_state.isGameOver) {
+      final winner = status == GameStatus.aWon ? PlayerSide.a : PlayerSide.b;
+      _state = _state.copyWith(
+        phase: GamePhase.finished,
+        winner: winner,
+        clearActiveChain: true,
+      );
+    }
+    return status;
   }
 
   @override

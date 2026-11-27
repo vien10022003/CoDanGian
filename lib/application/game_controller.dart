@@ -28,6 +28,9 @@ class GameController extends ChangeNotifier {
   bool get canUndo => state.canUndo;
   bool get hasMoves => state.moveHistory.isNotEmpty;
   bool get isChaining => state.isChaining;
+  bool get isGameOver => state.isGameOver;
+  GameStatus get gameStatus => _engine.checkGameOver();
+  PlayerSide? get winner => state.winner;
 
   /// Human-readable name for a player side.
   static String playerDisplayName(PlayerSide side) {
@@ -51,7 +54,9 @@ class GameController extends ChangeNotifier {
   void handlePositionTap(String positionId) {
     final current = state;
     if (current.isGameOver) {
-      _statusHint = 'Ván đấu đã kết thúc. Nhấn Chơi lại để bắt đầu ván mới.';
+      final winnerSide = current.winner ?? current.currentTurn;
+      _statusHint =
+          '${playerDisplayName(winnerSide)} đã chiến thắng! Nhấn Chơi lại để bắt đầu ván mới.';
       notifyListeners();
       return;
     }
@@ -138,7 +143,11 @@ class GameController extends ChangeNotifier {
     final updatedState = result.state;
     final executedMove = result.move!;
 
-    if (updatedState.activeChainPieceId != null) {
+    if (updatedState.isGameOver) {
+      _clearSelection();
+      final winnerSide = updatedState.winner ?? executedMove.player;
+      _statusHint = 'Chiến thắng! ${playerDisplayName(winnerSide)} thắng cuộc!';
+    } else if (updatedState.activeChainPieceId != null) {
       _selectPiece(updatedState.activeChainPieceId!);
       _statusHint =
           'Ăn quân thành công! Tiếp tục ăn liên tiếp bằng quân ${updatedState.activeChainPieceId}.';

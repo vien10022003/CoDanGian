@@ -29,3 +29,19 @@ Sau khi ăn quân, phải kiểm tra xem chính quân vừa di chuyển có th�
 - Lưu toàn bộ chuỗi ăn vào lịch sử để hỗ trợ hoàn tác.
 
 Tách biệt logic ăn quân khỏi giao diện.
+
+
+## 7. Điều kiện chiến thắng
+
+- Phe A chiến thắng khi toàn bộ quân của phe B bị ăn hết.
+- Phe B chiến thắng khi toàn bộ quân của phe A bị ăn hết.
+- Ngay khi một phe không còn quân nào trên bàn cờ, ván đấu kết thúc.
+- Hiển thị thông báo chiến thắng và tên phe thắng cuộc.
+- Cung cấp chức năng chơi lại để bắt đầu ván mới với trạng thái bàn cờ ban đầu.
+
+### Yêu cầu kỹ thuật
+
+- Xây dựng hàm `checkGameOver()` để kiểm tra số quân còn lại của mỗi phe.
+- Xây dựng trạng thái `gameStatus` gồm `playing`, `A_won`, `B_won`.
+- Kiểm tra điều kiện chiến thắng sau mỗi lần ăn quân, kể cả trong chuỗi ăn liên tiếp.
+- Nếu một phe hết quân, kết thúc chuỗi ăn ngay lập tức và không chuyển sang lượt tiếp theo.

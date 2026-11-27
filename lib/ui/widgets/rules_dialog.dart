@@ -45,6 +45,14 @@ class CoChemRulesDialog extends StatelessWidget {
                   '• Không được nhảy qua quân đồng minh hoặc nhảy xa hơn ô ngay sau quân bị ăn.\n'
                   '• Sau khi ăn, nếu chính quân vừa nhảy còn nước ăn tiếp theo, bạn bắt buộc phải tiếp tục dùng quân đó ăn liên tiếp (có thể chọn hướng nếu có nhiều hướng) cho đến khi hết nước ăn mới chuyển lượt.',
             ),
+            SizedBox(height: 12),
+            _RuleSection(
+              heading: '4. Điều kiện chiến thắng',
+              body:
+                  '• Phe A thắng ngay lập tức khi toàn bộ quân của Phe B bị ăn hết.\n'
+                  '• Phe B thắng ngay lập tức khi toàn bộ quân của Phe A bị ăn hết.\n'
+                  '• Nếu đối phương hết quân ngay giữa chuỗi ăn liên tiếp, ván đấu kết thúc ngay và công bố phe thắng cuộc.',
+            ),
           ],
         ),
       ),

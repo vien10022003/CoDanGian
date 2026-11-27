@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../engine/engine.dart';
 import '../theme/viet_theme.dart';
 
-/// Displays both players' status cards, active turn / chain indicator,
+/// Displays both players' status cards, active turn / chain / victory indicator,
 /// remaining piece counts, and captured counts derived from [GameState].
 class PlayerTurnBar extends StatelessWidget {
   const PlayerTurnBar({
@@ -15,7 +15,13 @@ class PlayerTurnBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isATurn = state.currentTurn == PlayerSide.a;
+    final isGameOver = state.isGameOver;
+    final winner = state.winner;
+    final isATurn = !isGameOver && state.currentTurn == PlayerSide.a;
+    final isBTurn = !isGameOver && state.currentTurn == PlayerSide.b;
+    final aWon = isGameOver && winner == PlayerSide.a;
+    final bWon = isGameOver && winner == PlayerSide.b;
+
     final countA = state.countPieces(PlayerSide.a);
     final countB = state.countPieces(PlayerSide.b);
     final capturedByA = state.countCapturedBy(PlayerSide.a);
@@ -30,6 +36,7 @@ class PlayerTurnBar extends StatelessWidget {
             pieceCount: countA,
             capturedCount: capturedByA,
             isActive: isATurn,
+            isWinner: aWon,
             isChaining: isATurn && state.isChaining,
             accentColor: VietTheme.sideARedLight,
             fillColor: VietTheme.sideARed,
@@ -42,6 +49,7 @@ class PlayerTurnBar extends StatelessWidget {
             moveCount: state.moveHistory.length,
             currentTurn: state.currentTurn,
             isChaining: state.isChaining,
+            winner: isGameOver ? winner : null,
           ),
         ),
         Expanded(
@@ -50,8 +58,9 @@ class PlayerTurnBar extends StatelessWidget {
             subtitle: 'Xanh · Ăn $capturedByB',
             pieceCount: countB,
             capturedCount: capturedByB,
-            isActive: !isATurn,
-            isChaining: !isATurn && state.isChaining,
+            isActive: isBTurn,
+            isWinner: bWon,
+            isChaining: isBTurn && state.isChaining,
             accentColor: VietTheme.sideBBlueLight,
             fillColor: VietTheme.sideBBlue,
             sideBadge: 'B',
@@ -69,6 +78,7 @@ class _PlayerCard extends StatelessWidget {
     required this.pieceCount,
     required this.capturedCount,
     required this.isActive,
+    required this.isWinner,
     required this.isChaining,
     required this.accentColor,
     required this.fillColor,
@@ -80,6 +90,7 @@ class _PlayerCard extends StatelessWidget {
   final int pieceCount;
   final int capturedCount;
   final bool isActive;
+  final bool isWinner;
   final bool isChaining;
   final Color accentColor;
   final Color fillColor;
@@ -87,8 +98,20 @@ class _PlayerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final highlighted = isActive || isWinner;
     final activeHighlight =
         isChaining ? VietTheme.captureHighlightGlow : VietTheme.bronzeGoldLight;
+
+    final String statusLine;
+    if (isWinner) {
+      statusLine = 'Chiến thắng! · Còn $pieceCount';
+    } else if (isChaining) {
+      statusLine = 'Ăn tiếp! · Còn $pieceCount';
+    } else if (isActive) {
+      statusLine = 'Đang đi · Còn $pieceCount · Ăn $capturedCount';
+    } else {
+      statusLine = '$subtitle · Còn $pieceCount';
+    }
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
@@ -96,22 +119,22 @@ class _PlayerCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        color: isActive
-            ? fillColor.withValues(alpha: 0.28)
+        color: highlighted
+            ? fillColor.withValues(alpha: isWinner ? 0.42 : 0.28)
             : Colors.black.withValues(alpha: 0.24),
         border: Border.all(
-          color: isActive
+          color: highlighted
               ? activeHighlight
               : VietTheme.bronzeGold.withValues(alpha: 0.22),
-          width: isActive ? 1.8 : 1.0,
+          width: highlighted ? 1.8 : 1.0,
         ),
-        boxShadow: isActive
+        boxShadow: highlighted
             ? [
                 BoxShadow(
                   color: (isChaining
                           ? VietTheme.captureHighlight
                           : VietTheme.bronzeGold)
-                      .withValues(alpha: 0.26),
+                      .withValues(alpha: isWinner ? 0.36 : 0.26),
                   blurRadius: 12,
                 ),
               ]
@@ -126,21 +149,27 @@ class _PlayerCard extends StatelessWidget {
               shape: BoxShape.circle,
               color: fillColor,
               border: Border.all(
-                color: isActive
+                color: highlighted
                     ? activeHighlight
                     : VietTheme.parchment.withValues(alpha: 0.45),
                 width: 1.5,
               ),
             ),
             child: Center(
-              child: Text(
-                sideBadge,
-                style: const TextStyle(
-                  color: VietTheme.parchment,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                ),
-              ),
+              child: isWinner
+                  ? const Icon(
+                      Icons.emoji_events_rounded,
+                      color: VietTheme.bronzeGoldLight,
+                      size: 16,
+                    )
+                  : Text(
+                      sideBadge,
+                      style: const TextStyle(
+                        color: VietTheme.parchment,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
             ),
           ),
           const SizedBox(width: 8),
@@ -154,7 +183,7 @@ class _PlayerCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: isActive
+                    color: highlighted
                         ? VietTheme.parchment
                         : VietTheme.parchmentSoft.withValues(alpha: 0.72),
                     fontSize: 13,
@@ -163,21 +192,17 @@ class _PlayerCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  isChaining
-                      ? 'Ăn tiếp! · Còn $pieceCount'
-                      : isActive
-                          ? 'Đang đi · Còn $pieceCount · Ăn $capturedCount'
-                          : '$subtitle · Còn $pieceCount',
+                  statusLine,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: isChaining
                         ? VietTheme.captureHighlightGlow
-                        : isActive
+                        : highlighted
                             ? VietTheme.bronzeGoldLight
                             : accentColor.withValues(alpha: 0.85),
                     fontSize: 11,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: highlighted ? FontWeight.w600 : FontWeight.w500,
                   ),
                 ),
               ],
@@ -194,25 +219,38 @@ class _TurnCounterPill extends StatelessWidget {
     required this.moveCount,
     required this.currentTurn,
     required this.isChaining,
+    this.winner,
   });
 
   final int moveCount;
   final PlayerSide currentTurn;
   final bool isChaining;
+  final PlayerSide? winner;
 
   @override
   Widget build(BuildContext context) {
+    final isFinished = winner != null;
+    final label = isFinished
+        ? '${winner!.id} thắng'
+        : isChaining
+            ? 'Ăn tiếp ${currentTurn.id}'
+            : 'Lượt ${currentTurn.id}';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        color: isChaining
-            ? VietTheme.captureHighlight.withValues(alpha: 0.25)
-            : Colors.black.withValues(alpha: 0.34),
+        color: isFinished
+            ? VietTheme.bronzeGold.withValues(alpha: 0.25)
+            : isChaining
+                ? VietTheme.captureHighlight.withValues(alpha: 0.25)
+                : Colors.black.withValues(alpha: 0.34),
         border: Border.all(
-          color: isChaining
-              ? VietTheme.captureHighlightGlow.withValues(alpha: 0.8)
-              : VietTheme.bronzeGold.withValues(alpha: 0.35),
+          color: isFinished
+              ? VietTheme.bronzeGoldLight
+              : isChaining
+                  ? VietTheme.captureHighlightGlow.withValues(alpha: 0.8)
+                  : VietTheme.bronzeGold.withValues(alpha: 0.35),
         ),
       ),
       child: Column(
@@ -228,7 +266,7 @@ class _TurnCounterPill extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            isChaining ? 'Ăn tiếp ${currentTurn.id}' : 'Lượt ${currentTurn.id}',
+            label,
             style: TextStyle(
               color: isChaining
                   ? VietTheme.captureHighlightGlow
