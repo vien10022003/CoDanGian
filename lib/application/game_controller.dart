@@ -1,22 +1,53 @@
+import 'dart:async';
+import 'dart:isolate';
+
 import 'package:flutter/foundation.dart';
 
 import '../engine/engine.dart';
+import 'game_session_config.dart';
 
-/// Presentation controller connecting a UI-agnostic [GameEngine] to Flutter UI.
-///
-/// Holds transient UI selection state ([selectedPieceId], [legalMoveTargets],
-/// [captureMoveTargets], [capturablePiecePositions], [statusHint]) while
-/// delegating all game rules and state transitions to [GameEngine].
+/// Asynchronous executor used to compute an AI move without blocking UI frames.
+typedef AiMoveExecutor = Future<MoveCandidate?> Function(
+  GameAiAgent agent,
+  GameRules rules,
+  GameState state,
+);
+
+/// Default production executor running AI search in a background Dart [Isolate].
+Future<MoveCandidate?> defaultIsolateAiExecutor(
+  GameAiAgent agent,
+  GameRules rules,
+  GameState state,
+) {
+  return Isolate.run(() => agent.chooseNextMove(rules, state));
+}
+
+/// Presentation controller connecting a UI-agnostic [GameEngine] (and optional
+/// [GameAiAgent]) to Flutter UI.
 class GameController extends ChangeNotifier {
-  GameController({required this._engine});
+  GameController({
+    required this._engine,
+    this.sessionConfig = const GameSessionConfig.localTwoPlayer(),
+    this._aiAgent,
+    AiMoveExecutor? aiMoveExecutor,
+    this.aiMoveDelay = const Duration(milliseconds: 380),
+  }) : _aiMoveExecutor = aiMoveExecutor ?? defaultIsolateAiExecutor;
 
   final GameEngine _engine;
+  final GameSessionConfig sessionConfig;
+  final GameAiAgent? _aiAgent;
+  final AiMoveExecutor _aiMoveExecutor;
+  final Duration aiMoveDelay;
 
   String? _selectedPieceId;
   Set<String> _legalMoveTargets = const <String>{};
   Set<String> _captureMoveTargets = const <String>{};
   Set<String> _capturablePiecePositions = const <String>{};
   String? _statusHint;
+
+  bool _isAiThinking = false;
+  bool _disposed = false;
+  int _aiTurnEpoch = 0;
 
   GameState get state => _engine.getGameState();
   String? get selectedPieceId => _selectedPieceId;
@@ -25,30 +56,41 @@ class GameController extends ChangeNotifier {
   Set<String> get capturablePiecePositions => _capturablePiecePositions;
   String? get statusHint => _statusHint;
 
-  bool get canUndo => state.canUndo;
+  bool get isVsAi => sessionConfig.isVsAi && _aiAgent != null;
+  bool get isAiThinking => _isAiThinking;
+  bool get isAiTurn =>
+      isVsAi && !state.isGameOver && state.currentTurn == sessionConfig.aiSide;
+  AiDifficulty? get aiDifficulty => sessionConfig.aiDifficulty;
+
+  bool get canUndo => !_isAiThinking && state.canUndo;
   bool get hasMoves => state.moveHistory.isNotEmpty;
   bool get isChaining => state.isChaining;
   bool get isGameOver => state.isGameOver;
   GameStatus get gameStatus => _engine.checkGameOver();
   PlayerSide? get winner => state.winner;
 
-  /// Human-readable name for a player side.
-  static String playerDisplayName(PlayerSide side) {
+  /// Human-readable name for a player side given optional [sessionConfig].
+  static String playerDisplayName(
+    PlayerSide side, {
+    GameSessionConfig sessionConfig = const GameSessionConfig.localTwoPlayer(),
+  }) {
+    if (sessionConfig.isVsAi) {
+      if (side == sessionConfig.humanSide) return 'Bạn (Đỏ)';
+      if (side == sessionConfig.aiSide) {
+        final level = sessionConfig.aiDifficulty?.label ?? 'AI';
+        return 'Máy ($level)';
+      }
+    }
     if (side == PlayerSide.a) return 'Người chơi A (Đỏ)';
     if (side == PlayerSide.b) return 'Người chơi B (Xanh)';
     return 'Người chơi ${side.id}';
   }
 
-  /// Short label for a player side.
-  static String playerShortLabel(PlayerSide side) {
-    if (side == PlayerSide.a) return 'Phe A · Đỏ';
-    if (side == PlayerSide.b) return 'Phe B · Xanh';
-    return 'Phe ${side.id}';
+  /// Starts an AI turn if the match is currently waiting on the AI side.
+  void triggerAiTurnIfNeeded() {
+    if (_disposed || !isAiTurn || _isAiThinking) return;
+    _scheduleAiTurn();
   }
-
-  /// Formats a board position ID into its coordinate label (e.g. `b4`).
-  String formatPosition(String positionId) =>
-      state.board.positionById(positionId)?.label ?? positionId;
 
   /// Handles user tap on any board intersection [positionId].
   void handlePositionTap(String positionId) {
@@ -56,7 +98,13 @@ class GameController extends ChangeNotifier {
     if (current.isGameOver) {
       final winnerSide = current.winner ?? current.currentTurn;
       _statusHint =
-          '${playerDisplayName(winnerSide)} đã chiến thắng! Nhấn Chơi lại để bắt đầu ván mới.';
+          '${playerDisplayName(winnerSide, sessionConfig: sessionConfig)} đã chiến thắng! Nhấn Chơi lại để bắt đầu ván mới.';
+      notifyListeners();
+      return;
+    }
+
+    if (isAiTurn || _isAiThinking) {
+      _statusHint = 'Đang là lượt của Máy, vui lòng chờ trong giây lát...';
       notifyListeners();
       return;
     }
@@ -85,7 +133,7 @@ class GameController extends ChangeNotifier {
             'Ô đã có quân đối phương. Chọn ô trống liền kề hoặc nhảy qua đầu để ăn.';
       } else {
         _statusHint =
-            'Đang là lượt của ${playerDisplayName(current.currentTurn)}.';
+            'Đang là lượt của ${playerDisplayName(current.currentTurn, sessionConfig: sessionConfig)}.';
       }
       notifyListeners();
       return;
@@ -146,8 +194,26 @@ class GameController extends ChangeNotifier {
     if (updatedState.isGameOver) {
       _clearSelection();
       final winnerSide = updatedState.winner ?? executedMove.player;
-      _statusHint = 'Chiến thắng! ${playerDisplayName(winnerSide)} thắng cuộc!';
-    } else if (updatedState.activeChainPieceId != null) {
+      _statusHint =
+          'Chiến thắng! ${playerDisplayName(winnerSide, sessionConfig: sessionConfig)} thắng cuộc!';
+      notifyListeners();
+      return;
+    }
+
+    if (updatedState.currentTurn == sessionConfig.aiSide && isVsAi) {
+      _clearSelection();
+      if (executedMove.isCapture) {
+        _statusHint =
+            '${playerDisplayName(executedMove.player, sessionConfig: sessionConfig)} vừa ăn ${executedMove.capturedPieceIds.length} quân!';
+      } else {
+        _statusHint = null;
+      }
+      notifyListeners();
+      _scheduleAiTurn();
+      return;
+    }
+
+    if (updatedState.activeChainPieceId != null) {
       _selectPiece(updatedState.activeChainPieceId!);
       _statusHint =
           'Ăn quân thành công! Tiếp tục ăn liên tiếp bằng quân ${updatedState.activeChainPieceId}.';
@@ -155,8 +221,8 @@ class GameController extends ChangeNotifier {
       _clearSelection();
       if (executedMove.isCapture) {
         _statusHint =
-            'Phe ${executedMove.player.id} vừa ăn ${executedMove.capturedPieceIds.length} quân! '
-            'Tới lượt ${playerDisplayName(updatedState.currentTurn)}.';
+            '${playerDisplayName(executedMove.player, sessionConfig: sessionConfig)} vừa ăn ${executedMove.capturedPieceIds.length} quân! '
+            'Tới lượt ${playerDisplayName(updatedState.currentTurn, sessionConfig: sessionConfig)}.';
       } else {
         _statusHint = null;
       }
@@ -164,8 +230,52 @@ class GameController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Reverts the most recent move.
+  Future<void> _scheduleAiTurn() async {
+    final agent = _aiAgent;
+    if (agent == null || _disposed || !isAiTurn) return;
+
+    final epoch = ++_aiTurnEpoch;
+    final snapshot = state;
+    _isAiThinking = true;
+    _statusHint = snapshot.isChaining
+        ? 'Máy (${agent.difficulty.label}) đang tiếp tục chuỗi ăn...'
+        : 'Máy (${agent.difficulty.label}) đang suy nghĩ...';
+    notifyListeners();
+
+    final aiComputationFuture = _aiMoveExecutor(agent, _engine.rules, snapshot);
+    final delayFuture = aiMoveDelay > Duration.zero
+        ? Future<void>.delayed(aiMoveDelay)
+        : Future<void>.value();
+
+    MoveCandidate? chosenMove;
+    try {
+      final results = await Future.wait<Object?>([
+        aiComputationFuture,
+        delayFuture,
+      ]);
+      chosenMove = results[0] as MoveCandidate?;
+    } catch (_) {
+      chosenMove = null;
+    }
+
+    if (_disposed || epoch != _aiTurnEpoch) return;
+    _isAiThinking = false;
+
+    if (chosenMove == null) {
+      _statusHint = 'Máy không còn nước đi hợp lệ.';
+      notifyListeners();
+      return;
+    }
+
+    _executeMove(chosenMove.pieceId, chosenMove.targetPositionId);
+  }
+
+  /// Reverts the most recent move (in vs-AI mode, reverts back to the human
+  /// player's turn so the player can redo their decision).
   bool undo() {
+    if (_isAiThinking) return false;
+    _aiTurnEpoch++;
+
     final result = _engine.undoMove();
     if (!result.isSuccess) {
       _clearSelection();
@@ -174,8 +284,15 @@ class GameController extends ChangeNotifier {
       return false;
     }
 
-    final restored = result.state;
-    if (restored.activeChainPieceId != null) {
+    if (isVsAi) {
+      while (state.canUndo && state.currentTurn == sessionConfig.aiSide) {
+        _engine.undoMove();
+      }
+    }
+
+    final restored = state;
+    if (restored.activeChainPieceId != null &&
+        restored.currentTurn == sessionConfig.humanSide) {
       _selectPiece(restored.activeChainPieceId!);
       _statusHint =
           'Đã hoàn tác: tiếp tục chuỗi ăn của quân ${restored.activeChainPieceId}.';
@@ -189,6 +306,8 @@ class GameController extends ChangeNotifier {
 
   /// Resets the board back to its initial state.
   void resetGame() {
+    _aiTurnEpoch++;
+    _isAiThinking = false;
     _engine.resetGame();
     _clearSelection();
     _statusHint = null;
@@ -232,5 +351,12 @@ class GameController extends ChangeNotifier {
     _legalMoveTargets = const <String>{};
     _captureMoveTargets = const <String>{};
     _capturablePiecePositions = const <String>{};
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _aiTurnEpoch++;
+    super.dispose();
   }
 }

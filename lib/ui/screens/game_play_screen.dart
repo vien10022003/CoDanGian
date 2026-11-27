@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../application/game_controller.dart';
+import '../../application/game_session_config.dart';
 import '../../engine/engine.dart';
 import '../theme/viet_theme.dart';
 import '../widgets/game_board_widget.dart';
@@ -10,16 +11,24 @@ import '../widgets/rules_dialog.dart';
 import '../widgets/victory_dialog.dart';
 import '../widgets/viet_background.dart';
 
-/// Main local 2-player match screen powered by a [GameEngine].
+/// Main match screen supporting both local 2-player hot-seat and vs-AI play.
 class GamePlayScreen extends StatefulWidget {
   const GamePlayScreen({
     super.key,
     required this.game,
     required this.engine,
+    this.sessionConfig = const GameSessionConfig.localTwoPlayer(),
+    this.aiAgent,
+    this.aiMoveExecutor,
+    this.aiMoveDelay = const Duration(milliseconds: 380),
   });
 
   final FolkGameDescriptor game;
   final GameEngine engine;
+  final GameSessionConfig sessionConfig;
+  final GameAiAgent? aiAgent;
+  final AiMoveExecutor? aiMoveExecutor;
+  final Duration aiMoveDelay;
 
   @override
   State<GamePlayScreen> createState() => _GamePlayScreenState();
@@ -32,16 +41,24 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = GameController(engine: widget.engine);
+    _controller = GameController(
+      engine: widget.engine,
+      sessionConfig: widget.sessionConfig,
+      aiAgent: widget.aiAgent,
+      aiMoveExecutor: widget.aiMoveExecutor,
+      aiMoveDelay: widget.aiMoveDelay,
+    );
     _controller.addListener(_onControllerChanged);
-    if (_controller.isGameOver) {
-      _victoryDialogShown = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _controller.isGameOver) {
-          _showVictoryDialog(_controller.state);
-        }
-      });
-    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_controller.isGameOver && !_victoryDialogShown) {
+        _victoryDialogShown = true;
+        _showVictoryDialog(_controller.state);
+      } else {
+        _controller.triggerAiTurnIfNeeded();
+      }
+    });
   }
 
   @override
@@ -76,7 +93,11 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
         return Scaffold(
           extendBodyBehindAppBar: true,
           appBar: AppBar(
-            title: Text(widget.game.name),
+            title: Text(
+              widget.sessionConfig.isVsAi
+                  ? '${widget.game.name} · Đấu Máy'
+                  : widget.game.name,
+            ),
             actions: [
               IconButton(
                 tooltip: 'Luật chơi',
@@ -94,8 +115,8 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
             child: SafeArea(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final isWide =
-                      constraints.maxWidth >= 760 && constraints.maxWidth > constraints.maxHeight;
+                  final isWide = constraints.maxWidth >= 760 &&
+                      constraints.maxWidth > constraints.maxHeight;
                   return isWide
                       ? _buildWideLayout(context, state)
                       : _buildPortraitLayout(context, state);
@@ -113,11 +134,17 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Column(
         children: [
-          PlayerTurnBar(state: state),
+          PlayerTurnBar(
+            state: state,
+            sessionConfig: widget.sessionConfig,
+            isAiThinking: _controller.isAiThinking,
+          ),
           const SizedBox(height: 10),
           _StatusHintBanner(
             hint: _controller.statusHint,
             state: state,
+            sessionConfig: widget.sessionConfig,
+            isAiThinking: _controller.isAiThinking,
           ),
           const SizedBox(height: 10),
           Expanded(
@@ -169,11 +196,17 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                PlayerTurnBar(state: state),
+                PlayerTurnBar(
+                  state: state,
+                  sessionConfig: widget.sessionConfig,
+                  isAiThinking: _controller.isAiThinking,
+                ),
                 const SizedBox(height: 14),
                 _StatusHintBanner(
                   hint: _controller.statusHint,
                   state: state,
+                  sessionConfig: widget.sessionConfig,
+                  isAiThinking: _controller.isAiThinking,
                 ),
                 const SizedBox(height: 18),
                 _ActionControlsBar(
@@ -203,14 +236,20 @@ class _GamePlayScreenState extends State<GamePlayScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => MoveHistorySheet(state: state),
+      builder: (_) => MoveHistorySheet(
+        state: state,
+        sessionConfig: widget.sessionConfig,
+      ),
     );
   }
 
   Future<void> _showVictoryDialog(GameState state) async {
     final replay = await showDialog<bool>(
       context: context,
-      builder: (_) => VictoryDialog(state: state),
+      builder: (_) => VictoryDialog(
+        state: state,
+        sessionConfig: widget.sessionConfig,
+      ),
     );
     if (replay == true && mounted) {
       _controller.resetGame();
@@ -263,10 +302,14 @@ class _StatusHintBanner extends StatelessWidget {
   const _StatusHintBanner({
     required this.hint,
     required this.state,
+    required this.sessionConfig,
+    required this.isAiThinking,
   });
 
   final String? hint;
   final GameState state;
+  final GameSessionConfig sessionConfig;
+  final bool isAiThinking;
 
   @override
   Widget build(BuildContext context) {
@@ -277,7 +320,7 @@ class _StatusHintBanner extends StatelessWidget {
     final String message;
     if (isGameOver && winner != null) {
       message =
-          'Chiến thắng! ${GameController.playerDisplayName(winner)} thắng cuộc!';
+          'Chiến thắng! ${GameController.playerDisplayName(winner, sessionConfig: sessionConfig)} thắng cuộc!';
     } else if (hint != null) {
       message = hint!;
     } else if (lastMove != null) {
@@ -285,11 +328,21 @@ class _StatusHintBanner extends StatelessWidget {
           lastMove.fromPositionId;
       final to = state.board.positionById(lastMove.toPositionId)?.label ??
           lastMove.toPositionId;
-      message =
-          'Vừa đi: Phe ${lastMove.player.id} ($from → $to) · Tới lượt ${GameController.playerDisplayName(state.currentTurn)}';
+      final actor = GameController.playerDisplayName(
+        lastMove.player,
+        sessionConfig: sessionConfig,
+      );
+      final nextActor = GameController.playerDisplayName(
+        state.currentTurn,
+        sessionConfig: sessionConfig,
+      );
+      message = 'Vừa đi: $actor ($from → $to) · Tới lượt $nextActor';
     } else {
-      message =
-          '${GameController.playerDisplayName(state.currentTurn)} đi trước · Chạm quân cờ để chọn nước đi';
+      final firstActor = GameController.playerDisplayName(
+        state.currentTurn,
+        sessionConfig: sessionConfig,
+      );
+      message = '$firstActor đi trước · Chạm quân cờ để chọn nước đi';
     }
 
     return Container(
@@ -315,6 +368,16 @@ class _StatusHintBanner extends StatelessWidget {
               Icons.emoji_events_rounded,
               color: VietTheme.bronzeGoldLight,
               size: 18,
+            ),
+            const SizedBox(width: 8),
+          ] else if (isAiThinking) ...[
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: VietTheme.bronzeGoldLight,
+              ),
             ),
             const SizedBox(width: 8),
           ],
@@ -443,4 +506,3 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
-

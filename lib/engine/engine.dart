@@ -1,3 +1,5 @@
+export 'ai/co_chem_ai.dart';
+export 'ai/game_ai.dart';
 export 'contracts/game_engine.dart';
 export 'contracts/game_rules.dart';
 export 'games/co_chem/co_chem_board.dart';

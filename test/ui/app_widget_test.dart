@@ -1,5 +1,7 @@
 import 'package:co_dan_gian/app.dart';
+import 'package:co_dan_gian/application/game_session_config.dart';
 import 'package:co_dan_gian/engine/engine.dart';
+import 'package:co_dan_gian/ui/screens/game_play_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -37,10 +39,14 @@ void main() {
         findsOneWidget,
       );
 
-      // Tapping Cờ Chém launches the game board screen
+      // Tapping Cờ Chém opens mode sheet, then choosing 2-player launches game board
       await tester.ensureVisible(find.text('Cờ Chém'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cờ Chém'));
+      await tester.pumpAndSettle();
+      expect(find.text('Chọn chế độ · Cờ Chém'), findsOneWidget);
+      expect(find.text('Đấu với Máy'), findsOneWidget);
+      await tester.tap(find.text('2 người chơi'));
       await tester.pumpAndSettle();
 
       expect(find.text('Người chơi A'), findsOneWidget);
@@ -54,6 +60,8 @@ void main() {
     testWidgets('supports selecting piece, moving, undoing, history, rules, and restart', (tester) async {
       await tester.pumpWidget(CoDanGianApp());
       await tester.tap(find.text('Cờ Chém'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('2 người chơi'));
       await tester.pumpAndSettle();
 
       // Initially Side A's turn, 0 moves
@@ -139,6 +147,8 @@ void main() {
       tester.view.physicalSize = const Size(390, 844);
       await tester.pumpWidget(CoDanGianApp());
       await tester.tap(find.text('Cờ Chém'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('2 người chơi'));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('node_r2_c2')), findsOneWidget);
 
@@ -309,6 +319,75 @@ void main() {
       expect(find.text('Nước 0'), findsOneWidget);
       expect(find.byKey(const ValueKey('piece_A_01')), findsOneWidget);
       expect(find.byKey(const ValueKey('piece_B_10')), findsOneWidget);
+    });
+
+    testWidgets('GameModeSheet launches vs-AI mode with chosen difficulty', (tester) async {
+      await tester.pumpWidget(CoDanGianApp());
+      await tester.tap(find.text('Cờ Chém'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Khó'));
+      await tester.pump();
+      await tester.tap(find.text('Bắt đầu đấu với Máy (Khó)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cờ Chém · Đấu Máy'), findsOneWidget);
+      expect(find.text('Bạn'), findsOneWidget);
+      expect(find.text('Máy (Khó)'), findsOneWidget);
+    });
+
+    testWidgets('vs-AI gameplay executes AI reply (including chain) and undo returns to human turn', (tester) async {
+      final aiChainSetup = GameState(
+        gameTypeId: CoChemRules.typeId,
+        board: CoChemBoard.createBoardGraph(),
+        pieces: const {
+          // Human moves A_01 (r0_c0 -> r1_c0), triggering AI B_01's 2-step capture chain:
+          // r2_c0 -> r0_c0 (captures A_01) -> r0_c2 (captures A_02).
+          'A_01': GamePiece(id: 'A_01', owner: PlayerSide.a, positionId: 'r0_c0'),
+          'A_02': GamePiece(id: 'A_02', owner: PlayerSide.a, positionId: 'r0_c1'),
+          'A_03': GamePiece(id: 'A_03', owner: PlayerSide.a, positionId: 'r4_c4'),
+          'B_01': GamePiece(id: 'B_01', owner: PlayerSide.b, positionId: 'r2_c0'),
+        },
+        currentTurn: PlayerSide.a,
+        turnOrder: const [PlayerSide.a, PlayerSide.b],
+      );
+
+      final descriptor = FolkGameRegistry().findById(CoChemRules.typeId)!;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GamePlayScreen(
+            game: descriptor,
+            engine: createCoChemEngine(initialState: aiChainSetup),
+            sessionConfig: const GameSessionConfig.vsAi(
+              difficulty: AiDifficulty.hard,
+            ),
+            aiAgent: CoChemAiAgent(difficulty: AiDifficulty.hard, randomSeed: 1),
+            aiMoveExecutor: (agent, rules, state) async =>
+                agent.chooseNextMove(rules, state),
+            aiMoveDelay: Duration.zero,
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('node_r0_c0')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('node_r1_c0')));
+      await tester.pumpAndSettle();
+
+      // AI completed the 2-step capture chain and returned turn to Human
+      expect(find.byKey(const ValueKey('piece_A_01')), findsNothing);
+      expect(find.byKey(const ValueKey('piece_A_02')), findsNothing);
+      expect(find.text('Lượt A'), findsOneWidget);
+      expect(find.text('Nước 3'), findsOneWidget);
+
+      // Tapping Undo reverts AI's entire chain AND Human's move back to turn A, move 0
+      await tester.tap(find.text('Hoàn tác'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('piece_A_01')), findsOneWidget);
+      expect(find.byKey(const ValueKey('piece_A_02')), findsOneWidget);
+      expect(find.text('Lượt A'), findsOneWidget);
+      expect(find.text('Nước 0'), findsOneWidget);
     });
   });
 }

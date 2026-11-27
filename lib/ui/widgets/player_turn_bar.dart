@@ -1,17 +1,22 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../application/game_session_config.dart';
 import '../../engine/engine.dart';
 import '../theme/viet_theme.dart';
 
-/// Displays both players' status cards, active turn / chain / victory indicator,
-/// remaining piece counts, and captured counts derived from [GameState].
+/// Displays both players' status cards, active turn / AI thinking / chain /
+/// victory indicator, remaining piece counts, and captured counts.
 class PlayerTurnBar extends StatelessWidget {
   const PlayerTurnBar({
     super.key,
     required this.state,
+    this.sessionConfig = const GameSessionConfig.localTwoPlayer(),
+    this.isAiThinking = false,
   });
 
   final GameState state;
+  final GameSessionConfig sessionConfig;
+  final bool isAiThinking;
 
   @override
   Widget build(BuildContext context) {
@@ -27,17 +32,23 @@ class PlayerTurnBar extends StatelessWidget {
     final capturedByA = state.countCapturedBy(PlayerSide.a);
     final capturedByB = state.countCapturedBy(PlayerSide.b);
 
+    final titleA = sessionConfig.isVsAi ? 'Bạn' : 'Người chơi A';
+    final titleB = sessionConfig.isVsAi
+        ? 'Máy (${sessionConfig.aiDifficulty?.label ?? 'AI'})'
+        : 'Người chơi B';
+
     return Row(
       children: [
         Expanded(
           child: _PlayerCard(
-            title: 'Người chơi A',
+            title: titleA,
             subtitle: 'Đỏ · Ăn $capturedByA',
             pieceCount: countA,
             capturedCount: capturedByA,
             isActive: isATurn,
             isWinner: aWon,
             isChaining: isATurn && state.isChaining,
+            isThinking: false,
             accentColor: VietTheme.sideARedLight,
             fillColor: VietTheme.sideARed,
             sideBadge: 'A',
@@ -50,20 +61,22 @@ class PlayerTurnBar extends StatelessWidget {
             currentTurn: state.currentTurn,
             isChaining: state.isChaining,
             winner: isGameOver ? winner : null,
+            isAiTurn: isBTurn && sessionConfig.isVsAi,
           ),
         ),
         Expanded(
           child: _PlayerCard(
-            title: 'Người chơi B',
+            title: titleB,
             subtitle: 'Xanh · Ăn $capturedByB',
             pieceCount: countB,
             capturedCount: capturedByB,
             isActive: isBTurn,
             isWinner: bWon,
             isChaining: isBTurn && state.isChaining,
+            isThinking: isBTurn && isAiThinking,
             accentColor: VietTheme.sideBBlueLight,
             fillColor: VietTheme.sideBBlue,
-            sideBadge: 'B',
+            sideBadge: sessionConfig.isVsAi ? 'AI' : 'B',
           ),
         ),
       ],
@@ -80,6 +93,7 @@ class _PlayerCard extends StatelessWidget {
     required this.isActive,
     required this.isWinner,
     required this.isChaining,
+    required this.isThinking,
     required this.accentColor,
     required this.fillColor,
     required this.sideBadge,
@@ -92,6 +106,7 @@ class _PlayerCard extends StatelessWidget {
   final bool isActive;
   final bool isWinner;
   final bool isChaining;
+  final bool isThinking;
   final Color accentColor;
   final Color fillColor;
   final String sideBadge;
@@ -105,6 +120,8 @@ class _PlayerCard extends StatelessWidget {
     final String statusLine;
     if (isWinner) {
       statusLine = 'Chiến thắng! · Còn $pieceCount';
+    } else if (isThinking) {
+      statusLine = 'Đang nghĩ... · Còn $pieceCount';
     } else if (isChaining) {
       statusLine = 'Ăn tiếp! · Còn $pieceCount';
     } else if (isActive) {
@@ -164,10 +181,10 @@ class _PlayerCard extends StatelessWidget {
                     )
                   : Text(
                       sideBadge,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: VietTheme.parchment,
                         fontWeight: FontWeight.w800,
-                        fontSize: 13,
+                        fontSize: sideBadge.length > 1 ? 11 : 13,
                       ),
                     ),
             ),
@@ -219,12 +236,14 @@ class _TurnCounterPill extends StatelessWidget {
     required this.moveCount,
     required this.currentTurn,
     required this.isChaining,
+    required this.isAiTurn,
     this.winner,
   });
 
   final int moveCount;
   final PlayerSide currentTurn;
   final bool isChaining;
+  final bool isAiTurn;
   final PlayerSide? winner;
 
   @override
@@ -233,8 +252,10 @@ class _TurnCounterPill extends StatelessWidget {
     final label = isFinished
         ? '${winner!.id} thắng'
         : isChaining
-            ? 'Ăn tiếp ${currentTurn.id}'
-            : 'Lượt ${currentTurn.id}';
+            ? 'Ăn tiếp ${isAiTurn ? 'Máy' : currentTurn.id}'
+            : isAiTurn
+                ? 'Lượt Máy'
+                : 'Lượt ${currentTurn.id}';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),

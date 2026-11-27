@@ -1,7 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../application/game_session_config.dart';
 import '../../engine/engine.dart';
 import '../theme/viet_theme.dart';
+import '../widgets/game_mode_sheet.dart';
 import '../widgets/viet_background.dart';
 import 'game_play_screen.dart';
 
@@ -138,7 +140,10 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void _handleGameTap(BuildContext context, FolkGameDescriptor game) {
+  Future<void> _handleGameTap(
+    BuildContext context,
+    FolkGameDescriptor game,
+  ) async {
     if (!game.isPlayable) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -155,12 +160,30 @@ class HomeScreen extends StatelessWidget {
       return;
     }
 
+    GameSessionConfig sessionConfig = const GameSessionConfig.localTwoPlayer();
+    if (game.supportsAi) {
+      final selected = await showModalBottomSheet<GameSessionConfig>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (_) => GameModeSheet(game: game),
+      );
+      if (selected == null || !context.mounted) return;
+      sessionConfig = selected;
+    }
+
     final engine = registry.createEngine(game.id);
+    final aiAgent = sessionConfig.isVsAi && sessionConfig.aiDifficulty != null
+        ? registry.createAiAgent(game.id, sessionConfig.aiDifficulty!)
+        : null;
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => GamePlayScreen(
           game: game,
           engine: engine,
+          sessionConfig: sessionConfig,
+          aiAgent: aiAgent,
         ),
       ),
     );

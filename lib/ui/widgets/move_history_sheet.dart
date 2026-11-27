@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../application/game_controller.dart';
+import '../../application/game_session_config.dart';
 import '../../engine/engine.dart';
 import '../theme/viet_theme.dart';
 
@@ -9,9 +11,11 @@ class MoveHistorySheet extends StatelessWidget {
   const MoveHistorySheet({
     super.key,
     required this.state,
+    this.sessionConfig = const GameSessionConfig.localTwoPlayer(),
   });
 
   final GameState state;
+  final GameSessionConfig sessionConfig;
 
   @override
   Widget build(BuildContext context) {
@@ -102,8 +106,10 @@ class MoveHistorySheet extends StatelessWidget {
                     final toLabel =
                         state.board.positionById(move.toPositionId)?.label ??
                             move.toPositionId;
-                    final playerLabel =
-                        isSideA ? 'Người chơi A (Đỏ)' : 'Người chơi B (Xanh)';
+                    final playerLabel = GameController.playerDisplayName(
+                      move.player,
+                      sessionConfig: sessionConfig,
+                    );
                     final captureSummary = move.isCapture
                         ? ' · Ăn ${move.capturedPieceIds.join(', ')}'
                             '${move.isChainContinuation ? ' (liên tiếp)' : ''}'

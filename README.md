@@ -11,15 +11,18 @@
   - **Nhảy qua đầu ăn quân** theo đường thẳng có đường nối hợp lệ khi ô ngay phía sau trống ([info2.md](info2.md)).
   - **Ăn liên tiếp bắt buộc**: giữ lượt cho quân vừa ăn nếu còn hướng nhảy ăn tiếp, cho phép chọn hướng nếu có nhiều nhánh, rồi mới chuyển lượt khi hết nước ăn.
   - **Điều kiện chiến thắng** ([info2.md](info2.md)): kiểm tra `checkGameOver()` sau mỗi lần ăn (kể cả giữa chuỗi ăn liên tiếp); cập nhật `gameStatus` (`playing`, `A_won`, `B_won`); kết thúc chuỗi ăn và ván đấu ngay lập tức khi một phe hết quân.
-- **Chế độ 2 người chơi tại chỗ (local)** trên cùng một thiết bị:
-  - Hiển thị rõ lượt đi, trạng thái ăn liên tiếp, số quân còn lại, số quân đã ăn và thông báo chiến thắng.
+- **Chế độ chơi**:
+  - **2 người chơi tại chỗ (local)** trên cùng một thiết bị: Người chơi A (Đỏ) đi trước, Người chơi B (Xanh) đi sau.
+  - **Đấu với Máy (AI)** với 3 mức độ **Dễ / Trung bình / Khó** (Minimax + Alpha-Beta Pruning + tìm kiếm nước ăn Quiescence + xử lý chuỗi ăn liên tiếp, chạy nền qua `Isolate.run`).
+  - Hiển thị rõ lượt đi, trạng thái máy đang suy nghĩ, chuỗi ăn liên tiếp, số quân còn lại, số quân đã ăn và thông báo chiến thắng.
   - Làm nổi bật ô đi thường (xanh ngọc) và ô nhảy ăn quân (đỏ-vàng).
-  - Hoàn tác nước đi (`undoMove`) khôi phục chính xác quân bị ăn và trạng thái chuỗi ăn; xem lịch sử nước đi; bắt đầu ván mới / chơi lại.
+  - Hoàn tác nước đi (`undoMove`), xem lịch sử nước đi, bắt đầu ván mới / chơi lại.
 - **Giao diện mang nét văn hóa Việt Nam**: Nền sơn mài kết hợp họa tiết Trống Đồng Đông Sơn, bàn cờ gỗ khắc chìm, quân cờ sơn mài/lam ngọc.
 
 ## Kiến trúc thư mục
 
 - `lib/engine/`: Pure Dart Game Engine (hoàn toàn không phụ thuộc Flutter UI):
+  - `ai/`: `AiDifficulty`, `GameAiAgent`, `CoChemAiAgent`.
   - `models/`: `PlayerSide`, `BoardPosition`, `BoardEdge`, `BoardGraph`, `GamePiece`, `GameMove`, `GameState` (`GameStatus`), `MoveResult`, `UndoResult`, `CaptureMoveOption`.
   - `contracts/`: `GameEngine` (`getGameState`, `getCaptureMoves`, `getLegalMoves`, `makeMove`, `checkGameOver`, `undoMove`, `resetGame`, `loadState`), `GameRules`, `CaptureRule`, `WinConditionRule`.
   - `games/`: `StandardGraphGameEngine`, `JumpCaptureRule`, `EliminationWinConditionRule`, và `co_chem/` (`CoChemBoard`, `CoChemRules`).

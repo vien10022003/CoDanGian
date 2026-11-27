@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../application/game_controller.dart';
+import '../../application/game_session_config.dart';
 import '../../engine/engine.dart';
 import '../theme/viet_theme.dart';
 
@@ -9,17 +10,29 @@ class VictoryDialog extends StatelessWidget {
   const VictoryDialog({
     super.key,
     required this.state,
+    this.sessionConfig = const GameSessionConfig.localTwoPlayer(),
   });
 
   final GameState state;
+  final GameSessionConfig sessionConfig;
 
   @override
   Widget build(BuildContext context) {
     final winner = state.winner ?? state.currentTurn;
     final isSideA = winner == PlayerSide.a;
     final badgeColor = isSideA ? VietTheme.sideARed : VietTheme.sideBBlue;
-    final winnerName = GameController.playerDisplayName(winner);
-    final loserLabel = isSideA ? 'Phe B (Xanh)' : 'Phe A (Đỏ)';
+    final winnerName = GameController.playerDisplayName(
+      winner,
+      sessionConfig: sessionConfig,
+    );
+    final loserSide = isSideA ? PlayerSide.b : PlayerSide.a;
+    final loserLabel = GameController.playerDisplayName(
+      loserSide,
+      sessionConfig: sessionConfig,
+    );
+    final headline = sessionConfig.isVsAi && !isSideA
+        ? 'Máy thắng!'
+        : 'Chiến thắng!';
 
     return AlertDialog(
       contentPadding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
@@ -56,9 +69,9 @@ class VictoryDialog extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            'Chiến thắng!',
-            style: TextStyle(
+          Text(
+            headline,
+            style: const TextStyle(
               color: VietTheme.bronzeGoldLight,
               fontSize: 23,
               fontWeight: FontWeight.w800,
@@ -112,4 +125,3 @@ class VictoryDialog extends StatelessWidget {
     );
   }
 }
-

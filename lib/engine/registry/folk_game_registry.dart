@@ -1,3 +1,5 @@
+import '../ai/co_chem_ai.dart';
+import '../ai/game_ai.dart';
 import '../contracts/game_engine.dart';
 import '../games/co_chem/co_chem_rules.dart';
 
@@ -12,6 +14,7 @@ class FolkGameDescriptor {
     required this.playerModeLabel,
     required this.isPlayable,
     this.createEngine,
+    this.createAiAgent,
   });
 
   final String id;
@@ -22,12 +25,16 @@ class FolkGameDescriptor {
   final String playerModeLabel;
   final bool isPlayable;
   final GameEngine Function()? createEngine;
+  final GameAiAgent Function(AiDifficulty difficulty)? createAiAgent;
+
+  bool get supportsAi => createAiAgent != null;
 }
 
 /// Central extensible catalog of Vietnamese folk board games.
 ///
 /// New games (Cờ Gánh, Cờ Ba Tướng, etc.) are registered here with their own
-/// [GameEngine] factory without modifying the game screen or lobby layout.
+/// [GameEngine] and optional [GameAiAgent] factories without modifying the
+/// lobby or gameplay layout.
 class FolkGameRegistry {
   FolkGameRegistry({List<FolkGameDescriptor>? games})
       : _games = List.unmodifiable(games ?? defaultGames);
@@ -40,11 +47,12 @@ class FolkGameRegistry {
       name: 'Cờ Chém',
       tagline: 'Đấu trí dân gian trên bàn cờ 25 điểm',
       description:
-          'Mỗi phe có 10 quân đối trận qua hàng giữa trống, di chuyển linh hoạt theo các đường ngang, dọc và chéo.',
+          'Mỗi phe có 10 quân đối trận qua hàng giữa trống, di chuyển linh hoạt và nhảy qua đầu để ăn quân liên tiếp.',
       boardSummary: 'Bàn 5×5 · 20 quân',
-      playerModeLabel: '2 người chơi',
+      playerModeLabel: '2 người · Đấu Máy',
       isPlayable: true,
       createEngine: () => createCoChemEngine(),
+      createAiAgent: (difficulty) => CoChemAiAgent(difficulty: difficulty),
     ),
     const FolkGameDescriptor(
       id: 'co_ganh',
@@ -90,5 +98,12 @@ class FolkGameRegistry {
     }
     return factory();
   }
-}
 
+  GameAiAgent? createAiAgent(String gameId, AiDifficulty difficulty) {
+    final descriptor = findById(gameId);
+    if (descriptor == null) {
+      throw ArgumentError('Unknown folk game ID: "$gameId".');
+    }
+    return descriptor.createAiAgent?.call(difficulty);
+  }
+}
