@@ -22,10 +22,16 @@ class GameState {
     required this.currentTurn,
     required List<PlayerSide> turnOrder,
     List<GameMove> moveHistory = const <GameMove>[],
+    this.activeChainPieceId,
     this.phase = GamePhase.playing,
     this.winner,
   })  : pieces = Map.unmodifiable(pieces),
-        occupancy = _buildConsistentOccupancy(board, pieces),
+        occupancy = _buildConsistentOccupancy(
+          board,
+          pieces,
+          currentTurn,
+          activeChainPieceId,
+        ),
         turnOrder = List.unmodifiable(turnOrder),
         moveHistory = List.unmodifiable(moveHistory);
 
@@ -39,12 +45,18 @@ class GameState {
   final PlayerSide currentTurn;
   final List<PlayerSide> turnOrder;
   final List<GameMove> moveHistory;
+
+  /// Non-null when a piece just captured and must continue a capture chain.
+  final String? activeChainPieceId;
+
   final GamePhase phase;
   final PlayerSide? winner;
 
   static Map<String, String> _buildConsistentOccupancy(
     BoardGraph board,
     Map<String, GamePiece> pieces,
+    PlayerSide currentTurn,
+    String? activeChainPieceId,
   ) {
     final map = <String, String>{};
     for (final entry in pieces.entries) {
@@ -68,6 +80,21 @@ class GameState {
       }
       map[piece.positionId] = piece.id;
     }
+
+    if (activeChainPieceId != null) {
+      final chainPiece = pieces[activeChainPieceId];
+      if (chainPiece == null || chainPiece.isCaptured) {
+        throw StateError(
+          'Active chain piece "$activeChainPieceId" is missing or captured.',
+        );
+      }
+      if (chainPiece.owner != currentTurn) {
+        throw StateError(
+          'Active chain piece "$activeChainPieceId" does not belong to current turn ${currentTurn.id}.',
+        );
+      }
+    }
+
     return Map.unmodifiable(map);
   }
 
@@ -100,9 +127,22 @@ class GameState {
     return count;
   }
 
+  /// Counts captured opponent pieces won by [capturingSide].
+  int countCapturedBy(PlayerSide capturingSide) {
+    var count = 0;
+    for (final piece in pieces.values) {
+      if (piece.owner != capturingSide && piece.isCaptured) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   GameMove? get lastMove => moveHistory.isEmpty ? null : moveHistory.last;
 
   bool get canUndo => moveHistory.isNotEmpty;
+
+  bool get isChaining => activeChainPieceId != null;
 
   bool get isGameOver => phase == GamePhase.finished;
 
@@ -117,6 +157,8 @@ class GameState {
     Map<String, GamePiece>? pieces,
     PlayerSide? currentTurn,
     List<GameMove>? moveHistory,
+    String? activeChainPieceId,
+    bool clearActiveChain = false,
     GamePhase? phase,
     PlayerSide? winner,
     bool clearWinner = false,
@@ -128,6 +170,9 @@ class GameState {
       currentTurn: currentTurn ?? this.currentTurn,
       turnOrder: turnOrder,
       moveHistory: moveHistory ?? this.moveHistory,
+      activeChainPieceId: clearActiveChain
+          ? null
+          : (activeChainPieceId ?? this.activeChainPieceId),
       phase: phase ?? this.phase,
       winner: clearWinner ? null : (winner ?? this.winner),
     );
@@ -155,6 +200,7 @@ class GameState {
       currentTurn: PlayerSide.fromJson(json['currentTurn']),
       turnOrder: turnOrder,
       moveHistory: moveHistory,
+      activeChainPieceId: json['activeChainPieceId'] as String?,
       phase: GamePhase.values.byName(
         (json['phase'] as String?) ?? GamePhase.playing.name,
       ),
@@ -169,8 +215,8 @@ class GameState {
         'currentTurn': currentTurn.toJson(),
         'turnOrder': turnOrder.map((s) => s.toJson()).toList(),
         'moveHistory': moveHistory.map((m) => m.toJson()).toList(),
+        'activeChainPieceId': activeChainPieceId,
         'phase': phase.name,
         'winner': winner?.toJson(),
       };
 }
-

@@ -10,7 +10,13 @@ abstract interface class GameEngine {
   /// Returns the current immutable game state snapshot.
   GameState getGameState();
 
-  /// Returns all valid target position IDs for [pieceId] in the current state.
+  /// Returns all legal capture target position IDs for [pieceId] in the current state.
+  List<String> getCaptureMoves(String pieceId);
+
+  /// Returns detailed capture options (including target enemy piece IDs) for [pieceId].
+  List<CaptureMoveOption> getCaptureOptions(String pieceId);
+
+  /// Returns all valid target position IDs (normal and capture) for [pieceId].
   List<String> getLegalMoves(String pieceId);
 
   /// Validates and executes moving [pieceId] to [targetPosition].
@@ -31,4 +37,3 @@ abstract interface class GameEngine {
   /// Underlying stateless rules definition used by this engine.
   GameRules get rules;
 }
-

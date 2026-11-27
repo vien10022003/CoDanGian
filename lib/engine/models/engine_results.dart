@@ -7,6 +7,7 @@ enum MoveError {
   pieceNotFound,
   pieceCaptured,
   notCurrentTurn,
+  mustContinueCaptureChain,
   targetPositionNotFound,
   samePosition,
   notAdjacent,
@@ -115,3 +116,46 @@ class MoveCandidate {
   String toString() => 'MoveCandidate($pieceId -> $targetPositionId)';
 }
 
+/// Describes a legal capture jump option, including the target landing
+/// position and the opponent piece(s) captured along the jump.
+class CaptureMoveOption {
+  CaptureMoveOption({
+    required this.pieceId,
+    required this.fromPositionId,
+    required this.targetPositionId,
+    required List<String> capturedPieceIds,
+  }) : capturedPieceIds = List.unmodifiable(capturedPieceIds);
+
+  final String pieceId;
+  final String fromPositionId;
+  final String targetPositionId;
+  final List<String> capturedPieceIds;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! CaptureMoveOption) return false;
+    if (pieceId != other.pieceId ||
+        fromPositionId != other.fromPositionId ||
+        targetPositionId != other.targetPositionId ||
+        capturedPieceIds.length != other.capturedPieceIds.length) {
+      return false;
+    }
+    for (var i = 0; i < capturedPieceIds.length; i++) {
+      if (capturedPieceIds[i] != other.capturedPieceIds[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        pieceId,
+        fromPositionId,
+        targetPositionId,
+        Object.hashAll(capturedPieceIds),
+      );
+
+  @override
+  String toString() =>
+      'CaptureMoveOption($pieceId: $fromPositionId -> $targetPositionId, captures: $capturedPieceIds)';
+}

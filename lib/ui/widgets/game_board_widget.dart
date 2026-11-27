@@ -16,6 +16,8 @@ class GameBoardWidget extends StatelessWidget {
     super.key,
     required this.state,
     required this.legalMoveTargets,
+    this.captureMoveTargets = const <String>{},
+    this.capturablePiecePositions = const <String>{},
     required this.onPositionTap,
     this.selectedPieceId,
   });
@@ -23,6 +25,8 @@ class GameBoardWidget extends StatelessWidget {
   final GameState state;
   final String? selectedPieceId;
   final Set<String> legalMoveTargets;
+  final Set<String> captureMoveTargets;
+  final Set<String> capturablePiecePositions;
   final ValueChanged<String> onPositionTap;
 
   @override
@@ -117,6 +121,8 @@ class GameBoardWidget extends StatelessWidget {
                           board: state.board,
                           gridPadding: gridPadding,
                           legalMoveTargets: legalMoveTargets,
+                          captureMoveTargets: captureMoveTargets,
+                          capturablePiecePositions: capturablePiecePositions,
                           selectedPositionId: selectedPositionId,
                           lastMove: state.lastMove,
                         ),
@@ -141,7 +147,9 @@ class GameBoardWidget extends StatelessWidget {
                               size: pieceSize,
                               isSelected: piece.id == selectedPieceId,
                               isCurrentTurnPiece:
-                                  piece.owner == state.currentTurn,
+                                  piece.owner == state.currentTurn &&
+                                  (!state.isChaining ||
+                                      piece.id == state.activeChainPieceId),
                               isLastMoved: piece.id == lastMovedPieceId,
                             ),
                           );
@@ -150,6 +158,7 @@ class GameBoardWidget extends StatelessWidget {
                     for (final pos in state.board.orderedPositions)
                       () {
                         final center = centerFor(pos);
+                        final isCapture = captureMoveTargets.contains(pos.id);
                         final isLegal = legalMoveTargets.contains(pos.id);
                         return Positioned(
                           left: center.dx - hitSize / 2,
@@ -159,7 +168,11 @@ class GameBoardWidget extends StatelessWidget {
                           child: Semantics(
                             button: true,
                             label: 'Vị trí ${pos.label}',
-                            hint: isLegal ? 'Nước đi hợp lệ' : null,
+                            hint: isCapture
+                                ? 'Nước ăn quân hợp lệ'
+                                : isLegal
+                                    ? 'Nước đi hợp lệ'
+                                    : null,
                             child: GestureDetector(
                               key: ValueKey('node_${pos.id}'),
                               behavior: HitTestBehavior.opaque,
@@ -178,4 +191,3 @@ class GameBoardWidget extends StatelessWidget {
     );
   }
 }
-

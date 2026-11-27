@@ -10,6 +10,7 @@ class GameMove {
     required this.toPositionId,
     List<String> capturedPieceIds = const <String>[],
     required this.previousTurn,
+    this.previousChainPieceId,
   }) : capturedPieceIds = List.unmodifiable(capturedPieceIds);
 
   /// 1-based sequential move number.
@@ -27,11 +28,20 @@ class GameMove {
   /// Destination board position ID.
   final String toPositionId;
 
-  /// Piece IDs captured as a result of this move (empty in Stage 1).
+  /// Piece IDs captured as a result of this move.
   final List<String> capturedPieceIds;
 
   /// Turn active prior to this move (restored on undo).
   final PlayerSide previousTurn;
+
+  /// Piece locked into a multi-capture chain prior to this move, or null.
+  final String? previousChainPieceId;
+
+  /// True if at least one opponent piece was captured during this move.
+  bool get isCapture => capturedPieceIds.isNotEmpty;
+
+  /// True if this move continued an active multi-capture chain.
+  bool get isChainContinuation => previousChainPieceId != null;
 
   factory GameMove.fromJson(Map<String, dynamic> json) {
     return GameMove(
@@ -43,6 +53,7 @@ class GameMove {
       capturedPieceIds: (json['capturedPieceIds'] as List<dynamic>? ?? const [])
           .cast<String>(),
       previousTurn: PlayerSide.fromJson(json['previousTurn']),
+      previousChainPieceId: json['previousChainPieceId'] as String?,
     );
   }
 
@@ -54,6 +65,7 @@ class GameMove {
         'toPositionId': toPositionId,
         'capturedPieceIds': capturedPieceIds,
         'previousTurn': previousTurn.toJson(),
+        'previousChainPieceId': previousChainPieceId,
       };
 
   @override
@@ -66,6 +78,7 @@ class GameMove {
         fromPositionId != other.fromPositionId ||
         toPositionId != other.toPositionId ||
         previousTurn != other.previousTurn ||
+        previousChainPieceId != other.previousChainPieceId ||
         capturedPieceIds.length != other.capturedPieceIds.length) {
       return false;
     }
@@ -83,11 +96,11 @@ class GameMove {
         fromPositionId,
         toPositionId,
         previousTurn,
+        previousChainPieceId,
         Object.hashAll(capturedPieceIds),
       );
 
   @override
   String toString() =>
-      'GameMove(#$moveNumber ${player.id}: $pieceId $fromPositionId -> $toPositionId)';
+      'GameMove(#$moveNumber ${player.id}: $pieceId $fromPositionId -> $toPositionId, captured: $capturedPieceIds)';
 }
-

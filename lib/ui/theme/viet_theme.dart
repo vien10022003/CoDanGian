@@ -32,6 +32,8 @@ class VietTheme {
 
   static const Color legalHighlight = Color(0xFF1D9E6C);
   static const Color legalHighlightGlow = Color(0xFF53E0A4);
+  static const Color captureHighlight = Color(0xFFE53935);
+  static const Color captureHighlightGlow = Color(0xFFFFCA28);
 
   static ThemeData buildTheme() {
     final scheme = ColorScheme.fromSeed(

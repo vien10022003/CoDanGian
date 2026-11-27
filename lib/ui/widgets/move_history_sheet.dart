@@ -3,7 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../engine/engine.dart';
 import '../theme/viet_theme.dart';
 
-/// Displays chronological move history recorded by the [GameEngine].
+/// Displays chronological move history recorded by the [GameEngine],
+/// including capture targets and multi-capture chain steps.
 class MoveHistorySheet extends StatelessWidget {
   const MoveHistorySheet({
     super.key,
@@ -101,6 +102,12 @@ class MoveHistorySheet extends StatelessWidget {
                     final toLabel =
                         state.board.positionById(move.toPositionId)?.label ??
                             move.toPositionId;
+                    final playerLabel =
+                        isSideA ? 'Người chơi A (Đỏ)' : 'Người chơi B (Xanh)';
+                    final captureSummary = move.isCapture
+                        ? ' · Ăn ${move.capturedPieceIds.join(', ')}'
+                            '${move.isChainContinuation ? ' (liên tiếp)' : ''}'
+                        : '';
 
                     return ListTile(
                       dense: true,
@@ -128,9 +135,11 @@ class MoveHistorySheet extends StatelessWidget {
                         ),
                       ),
                       subtitle: Text(
-                        isSideA ? 'Người chơi A (Đỏ)' : 'Người chơi B (Xanh)',
+                        '$playerLabel$captureSummary',
                         style: TextStyle(
-                          color: VietTheme.parchmentSoft.withValues(alpha: 0.7),
+                          color: move.isCapture
+                              ? VietTheme.captureHighlightGlow
+                              : VietTheme.parchmentSoft.withValues(alpha: 0.7),
                           fontSize: 12,
                         ),
                       ),
@@ -143,13 +152,17 @@ class MoveHistorySheet extends StatelessWidget {
                           color: Colors.black.withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: VietTheme.bronzeGold.withValues(alpha: 0.25),
+                            color: move.isCapture
+                                ? VietTheme.captureHighlight.withValues(alpha: 0.55)
+                                : VietTheme.bronzeGold.withValues(alpha: 0.25),
                           ),
                         ),
                         child: Text(
                           '$fromLabel → $toLabel',
-                          style: const TextStyle(
-                            color: VietTheme.bronzeGoldLight,
+                          style: TextStyle(
+                            color: move.isCapture
+                                ? VietTheme.captureHighlightGlow
+                                : VietTheme.bronzeGoldLight,
                             fontWeight: FontWeight.w700,
                             fontSize: 13,
                           ),
@@ -165,4 +178,3 @@ class MoveHistorySheet extends StatelessWidget {
     );
   }
 }
-

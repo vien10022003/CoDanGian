@@ -5,8 +5,8 @@ import '../engine/engine.dart';
 /// Presentation controller connecting a UI-agnostic [GameEngine] to Flutter UI.
 ///
 /// Holds transient UI selection state ([selectedPieceId], [legalMoveTargets],
-/// [statusHint]) while delegating all game rules and state transitions to
-/// the underlying [GameEngine].
+/// [captureMoveTargets], [capturablePiecePositions], [statusHint]) while
+/// delegating all game rules and state transitions to [GameEngine].
 class GameController extends ChangeNotifier {
   GameController({required this._engine});
 
@@ -14,15 +14,20 @@ class GameController extends ChangeNotifier {
 
   String? _selectedPieceId;
   Set<String> _legalMoveTargets = const <String>{};
+  Set<String> _captureMoveTargets = const <String>{};
+  Set<String> _capturablePiecePositions = const <String>{};
   String? _statusHint;
 
   GameState get state => _engine.getGameState();
   String? get selectedPieceId => _selectedPieceId;
   Set<String> get legalMoveTargets => _legalMoveTargets;
+  Set<String> get captureMoveTargets => _captureMoveTargets;
+  Set<String> get capturablePiecePositions => _capturablePiecePositions;
   String? get statusHint => _statusHint;
 
   bool get canUndo => state.canUndo;
   bool get hasMoves => state.moveHistory.isNotEmpty;
+  bool get isChaining => state.isChaining;
 
   /// Human-readable name for a player side.
   static String playerDisplayName(PlayerSide side) {
@@ -51,6 +56,11 @@ class GameController extends ChangeNotifier {
       return;
     }
 
+    if (current.isChaining) {
+      _handleTapDuringChain(current, positionId);
+      return;
+    }
+
     final tappedPiece = current.pieceAt(positionId);
 
     if (tappedPiece != null) {
@@ -65,10 +75,9 @@ class GameController extends ChangeNotifier {
         return;
       }
 
-      // Tapped an opponent piece.
       if (_selectedPieceId != null) {
         _statusHint =
-            'Ô đã có quân đối phương. Chỉ được di chuyển đến ô trống có đường nối.';
+            'Ô đã có quân đối phương. Chọn ô trống liền kề hoặc nhảy qua đầu để ăn.';
       } else {
         _statusHint =
             'Đang là lượt của ${playerDisplayName(current.currentTurn)}.';
@@ -77,7 +86,6 @@ class GameController extends ChangeNotifier {
       return;
     }
 
-    // Tapped an empty position.
     final selectedId = _selectedPieceId;
     if (selectedId == null) {
       _statusHint =
@@ -87,30 +95,87 @@ class GameController extends ChangeNotifier {
     }
 
     if (_legalMoveTargets.contains(positionId)) {
-      final result = _engine.makeMove(selectedId, positionId);
-      if (result.isSuccess) {
-        _clearSelection();
-        _statusHint = null;
-      } else {
-        _statusHint = result.errorMessage;
-      }
+      _executeMove(selectedId, positionId);
+      return;
+    }
+
+    _clearSelection();
+    _statusHint =
+        'Chỉ được đi đến ô trống liền kề có đường nối hoặc nhảy ăn quân hợp lệ.';
+    notifyListeners();
+  }
+
+  void _handleTapDuringChain(GameState current, String positionId) {
+    final chainPieceId = current.activeChainPieceId!;
+    if (_selectedPieceId != chainPieceId) {
+      _selectPiece(chainPieceId);
+    }
+
+    if (_captureMoveTargets.contains(positionId)) {
+      _executeMove(chainPieceId, positionId);
+      return;
+    }
+
+    final tappedPiece = current.pieceAt(positionId);
+    if (tappedPiece?.id == chainPieceId) {
+      _statusHint =
+          'Đang trong chuỗi ăn liên tiếp: chọn ô viền đỏ-vàng để nhảy ăn tiếp.';
+    } else {
+      _statusHint =
+          'Bắt buộc ăn liên tiếp bằng quân $chainPieceId, không thể đổi sang quân khác.';
+    }
+    notifyListeners();
+  }
+
+  void _executeMove(String pieceId, String targetPositionId) {
+    final result = _engine.makeMove(pieceId, targetPositionId);
+    if (!result.isSuccess) {
+      _statusHint = result.errorMessage;
       notifyListeners();
       return;
     }
 
-    // Empty position is not adjacent/legal for the currently selected piece.
-    _clearSelection();
-    _statusHint = 'Chỉ được di chuyển đến vị trí trống có đường nối trực tiếp.';
+    final updatedState = result.state;
+    final executedMove = result.move!;
+
+    if (updatedState.activeChainPieceId != null) {
+      _selectPiece(updatedState.activeChainPieceId!);
+      _statusHint =
+          'Ăn quân thành công! Tiếp tục ăn liên tiếp bằng quân ${updatedState.activeChainPieceId}.';
+    } else {
+      _clearSelection();
+      if (executedMove.isCapture) {
+        _statusHint =
+            'Phe ${executedMove.player.id} vừa ăn ${executedMove.capturedPieceIds.length} quân! '
+            'Tới lượt ${playerDisplayName(updatedState.currentTurn)}.';
+      } else {
+        _statusHint = null;
+      }
+    }
     notifyListeners();
   }
 
   /// Reverts the most recent move.
   bool undo() {
     final result = _engine.undoMove();
-    _clearSelection();
-    _statusHint = result.isSuccess ? 'Đã hoàn tác nước đi gần nhất.' : null;
+    if (!result.isSuccess) {
+      _clearSelection();
+      _statusHint = null;
+      notifyListeners();
+      return false;
+    }
+
+    final restored = result.state;
+    if (restored.activeChainPieceId != null) {
+      _selectPiece(restored.activeChainPieceId!);
+      _statusHint =
+          'Đã hoàn tác: tiếp tục chuỗi ăn của quân ${restored.activeChainPieceId}.';
+    } else {
+      _clearSelection();
+      _statusHint = 'Đã hoàn tác nước đi gần nhất.';
+    }
     notifyListeners();
-    return result.isSuccess;
+    return true;
   }
 
   /// Resets the board back to its initial state.
@@ -122,16 +187,41 @@ class GameController extends ChangeNotifier {
   }
 
   void _selectPiece(String pieceId) {
+    final current = state;
     final moves = _engine.getLegalMoves(pieceId);
+    final captureOptions = _engine.getCaptureOptions(pieceId);
+
+    final captureTargets = <String>{
+      for (final opt in captureOptions) opt.targetPositionId,
+    };
+    final victimPositions = <String>{
+      for (final opt in captureOptions)
+        for (final victimId in opt.capturedPieceIds)
+          if (current.pieces[victimId] case final victim?) victim.positionId,
+    };
+
     _selectedPieceId = pieceId;
     _legalMoveTargets = Set<String>.unmodifiable(moves);
-    _statusHint = moves.isEmpty
-        ? 'Quân này hiện bị chặn, hãy chọn quân khác.'
-        : 'Chạm vào điểm sáng màu xanh ngọc để di chuyển.';
+    _captureMoveTargets = Set<String>.unmodifiable(captureTargets);
+    _capturablePiecePositions = Set<String>.unmodifiable(victimPositions);
+
+    if (current.isChaining) {
+      _statusHint =
+          'Ăn liên tiếp! Chạm ô viền đỏ-vàng để nhảy qua quân đối phương.';
+    } else if (moves.isEmpty) {
+      _statusHint = 'Quân này hiện bị chặn, hãy chọn quân khác.';
+    } else if (captureTargets.isNotEmpty) {
+      _statusHint =
+          'Chọn ô xanh ngọc để đi thường hoặc ô đỏ-vàng để nhảy ăn quân.';
+    } else {
+      _statusHint = 'Chạm vào điểm sáng màu xanh ngọc để di chuyển.';
+    }
   }
 
   void _clearSelection() {
     _selectedPieceId = null;
     _legalMoveTargets = const <String>{};
+    _captureMoveTargets = const <String>{};
+    _capturablePiecePositions = const <String>{};
   }
 }

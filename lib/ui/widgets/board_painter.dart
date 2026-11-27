@@ -4,7 +4,7 @@ import '../../engine/engine.dart';
 import '../theme/viet_theme.dart';
 
 /// Renders the game board surface, graph connections, coordinate labels,
-/// intersection markers, last-move trail, and legal destination highlights.
+/// intersection markers, last-move trail, normal legal targets, and capture targets.
 ///
 /// Completely data-driven from [board]: never hardcodes board geometry.
 class GameBoardPainter extends CustomPainter {
@@ -12,6 +12,8 @@ class GameBoardPainter extends CustomPainter {
     required this.board,
     required this.gridPadding,
     required this.legalMoveTargets,
+    this.captureMoveTargets = const <String>{},
+    this.capturablePiecePositions = const <String>{},
     this.selectedPositionId,
     this.lastMove,
   });
@@ -19,6 +21,8 @@ class GameBoardPainter extends CustomPainter {
   final BoardGraph board;
   final double gridPadding;
   final Set<String> legalMoveTargets;
+  final Set<String> captureMoveTargets;
+  final Set<String> capturablePiecePositions;
   final String? selectedPositionId;
   final GameMove? lastMove;
 
@@ -92,16 +96,19 @@ class GameBoardPainter extends CustomPainter {
       if (fromNode != null && toNode != null) {
         final pFrom = pointFor(fromNode);
         final pTo = pointFor(toNode);
+        final trailColor = recent.isCapture
+            ? VietTheme.captureHighlight
+            : VietTheme.bronzeGoldDark;
         final trailPaint = Paint()
-          ..color = VietTheme.bronzeGoldDark.withValues(alpha: 0.45)
-          ..strokeWidth = 5.0
+          ..color = trailColor.withValues(alpha: recent.isCapture ? 0.55 : 0.45)
+          ..strokeWidth = recent.isCapture ? 6.0 : 5.0
           ..strokeCap = StrokeCap.round;
         canvas.drawLine(pFrom, pTo, trailPaint);
 
         final originRingPaint = Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.2
-          ..color = VietTheme.bronzeGoldDark.withValues(alpha: 0.65);
+          ..color = trailColor.withValues(alpha: 0.7);
         canvas.drawCircle(pFrom, innerWidth * 0.032, originRingPaint);
       }
     }
@@ -133,7 +140,7 @@ class GameBoardPainter extends CustomPainter {
       );
     }
 
-    // Intersection nodes and legal/selected highlights.
+    // Intersection nodes, capture warnings, and legal/capture landing highlights.
     final nodeRadius = (innerWidth / 4) * 0.075;
     final nodePaint = Paint()..color = VietTheme.boardInk;
     final nodeCenterPaint = Paint()..color = VietTheme.bronzeGoldLight;
@@ -143,11 +150,39 @@ class GameBoardPainter extends CustomPainter {
 
       if (pos.id == selectedPositionId) {
         final selectedGlow = Paint()
-          ..color = VietTheme.bronzeGold.withValues(alpha: 0.42);
-        canvas.drawCircle(center, innerWidth * 0.088, selectedGlow);
+          ..color = VietTheme.bronzeGold.withValues(alpha: 0.45);
+        canvas.drawCircle(center, innerWidth * 0.09, selectedGlow);
       }
 
-      if (legalMoveTargets.contains(pos.id)) {
+      if (capturablePiecePositions.contains(pos.id)) {
+        final targetGlow = Paint()
+          ..color = VietTheme.captureHighlight.withValues(alpha: 0.30);
+        final targetRing = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.6
+          ..color = VietTheme.captureHighlight;
+        canvas.drawCircle(center, innerWidth * 0.088, targetGlow);
+        canvas.drawCircle(center, innerWidth * 0.082, targetRing);
+      }
+
+      if (captureMoveTargets.contains(pos.id)) {
+        final outerHalo = Paint()
+          ..color = VietTheme.captureHighlightGlow.withValues(alpha: 0.36);
+        final outerRing = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.8
+          ..color = VietTheme.captureHighlight;
+        final innerRing = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.8
+          ..color = VietTheme.captureHighlightGlow;
+        final innerDot = Paint()..color = VietTheme.captureHighlight;
+
+        canvas.drawCircle(center, innerWidth * 0.074, outerHalo);
+        canvas.drawCircle(center, innerWidth * 0.056, outerRing);
+        canvas.drawCircle(center, innerWidth * 0.036, innerRing);
+        canvas.drawCircle(center, innerWidth * 0.020, innerDot);
+      } else if (legalMoveTargets.contains(pos.id)) {
         final outerHalo = Paint()
           ..color = VietTheme.legalHighlightGlow.withValues(alpha: 0.30);
         final ringPaint = Paint()
@@ -185,7 +220,12 @@ class GameBoardPainter extends CustomPainter {
         oldDelegate.gridPadding != gridPadding ||
         oldDelegate.selectedPositionId != selectedPositionId ||
         oldDelegate.lastMove != lastMove ||
-        !_sameSet(oldDelegate.legalMoveTargets, legalMoveTargets);
+        !_sameSet(oldDelegate.legalMoveTargets, legalMoveTargets) ||
+        !_sameSet(oldDelegate.captureMoveTargets, captureMoveTargets) ||
+        !_sameSet(
+          oldDelegate.capturablePiecePositions,
+          capturablePiecePositions,
+        );
   }
 
   bool _sameSet(Set<String> a, Set<String> b) {
@@ -193,4 +233,3 @@ class GameBoardPainter extends CustomPainter {
     return a.containsAll(b);
   }
 }
-

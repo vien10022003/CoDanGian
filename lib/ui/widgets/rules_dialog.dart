@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../theme/viet_theme.dart';
 
-/// Displays concise rules for Cờ Chém (Stage 1: board layout & basic movement).
+/// Displays concise rules for Cờ Chém (movement, jump capture, and multi-capture chains).
 class CoChemRulesDialog extends StatelessWidget {
   const CoChemRulesDialog({super.key});
 
@@ -31,19 +31,19 @@ class CoChemRulesDialog extends StatelessWidget {
             ),
             SizedBox(height: 12),
             _RuleSection(
-              heading: '2. Cách di chuyển',
+              heading: '2. Di chuyển cơ bản',
               body:
                   '• Hai bên đi luân phiên, mỗi lượt chọn một quân của phe mình.\n'
-                  '• Chạm vào quân cờ để xem các ô sáng màu xanh ngọc có thể đi.\n'
-                  '• Quân cờ chỉ được đi đến vị trí liền kề đang trống có đường nối trực tiếp.\n'
-                  '• Không thể đi đến ô không có đường nối hoặc di chuyển quân đối phương.',
+                  '• Chạm quân cờ để xem các ô sáng xanh ngọc có thể đi thường.\n'
+                  '• Quân cờ chỉ được đi tới vị trí trống liền kề có đường nối trực tiếp.',
             ),
             SizedBox(height: 12),
             _RuleSection(
-              heading: '3. Ghi chú giai đoạn',
+              heading: '3. Luật ăn quân & Ăn liên tiếp',
               body:
-                  '• Phiên bản hiện tại triển khai bàn cờ chuẩn, chế độ 2 người chơi tại chỗ, hoàn tác nước đi và ván mới.\n'
-                  '• Luật ăn quân, thắng/thua, AI và các trò chơi khác (Cờ Gánh, Cờ Ba Tướng) sẽ được mở rộng ở giai đoạn tiếp theo.',
+                  '• Nếu quân đối phương đứng kề ngay trước trên cùng một đường thẳng hợp lệ và ô ngay phía sau đang trống, bạn có thể nhảy qua đầu để ăn quân đó (ô đáp hiển thị viền đỏ-vàng).\n'
+                  '• Không được nhảy qua quân đồng minh hoặc nhảy xa hơn ô ngay sau quân bị ăn.\n'
+                  '• Sau khi ăn, nếu chính quân vừa nhảy còn nước ăn tiếp theo, bạn bắt buộc phải tiếp tục dùng quân đó ăn liên tiếp (có thể chọn hướng nếu có nhiều hướng) cho đến khi hết nước ăn mới chuyển lượt.',
             ),
           ],
         ),
@@ -100,4 +100,3 @@ class _RuleSection extends StatelessWidget {
     );
   }
 }
-

@@ -1,7 +1,7 @@
 import 'package:co_dan_gian/engine/engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _TestCaptureRule implements CaptureRule {
+class _TestCaptureRule extends NoOpCaptureRule {
   const _TestCaptureRule(this.targetToCapture);
 
   final String targetToCapture;

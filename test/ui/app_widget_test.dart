@@ -147,6 +147,96 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('node_r2_c2')), findsOneWidget);
     });
+
+    testWidgets('supports jump capture, mandatory multi-capture chain, history, and undo in UI', (tester) async {
+      final customState = GameState(
+        gameTypeId: CoChemRules.typeId,
+        board: CoChemBoard.createBoardGraph(),
+        pieces: const {
+          'A_01': GamePiece(
+            id: 'A_01',
+            owner: PlayerSide.a,
+            positionId: 'r0_c0',
+          ),
+          'A_02': GamePiece(
+            id: 'A_02',
+            owner: PlayerSide.a,
+            positionId: 'r0_c4',
+          ),
+          'B_01': GamePiece(
+            id: 'B_01',
+            owner: PlayerSide.b,
+            positionId: 'r1_c0',
+          ),
+          'B_02': GamePiece(
+            id: 'B_02',
+            owner: PlayerSide.b,
+            positionId: 'r2_c1',
+          ),
+        },
+        currentTurn: PlayerSide.a,
+        turnOrder: const [PlayerSide.a, PlayerSide.b],
+      );
+
+      final customRegistry = FolkGameRegistry(
+        games: [
+          FolkGameDescriptor(
+            id: CoChemRules.typeId,
+            name: 'Cờ Chém',
+            tagline: 'Test',
+            description: 'Test',
+            boardSummary: '5×5',
+            playerModeLabel: '2 người chơi',
+            isPlayable: true,
+            createEngine: () => createCoChemEngine(initialState: customState),
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(CoDanGianApp(registry: customRegistry));
+      await tester.tap(find.text('Cờ Chém'));
+      await tester.pumpAndSettle();
+
+      // Select A_01 and jump over B_01 to r2_c0
+      await tester.tap(find.byKey(const ValueKey('node_r0_c0')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('node_r2_c0')));
+      await tester.pumpAndSettle();
+
+      // B_01 is removed from board, chain locks A_01 and keeps A's turn
+      expect(find.byKey(const ValueKey('piece_B_01')), findsNothing);
+      expect(find.text('Ăn tiếp A'), findsOneWidget);
+
+      // Trying to switch to A_02 is blocked during chain
+      await tester.tap(find.byKey(const ValueKey('node_r0_c4')));
+      await tester.pump();
+      expect(
+        find.text('Bắt buộc ăn liên tiếp bằng quân A_01, không thể đổi sang quân khác.'),
+        findsOneWidget,
+      );
+
+      // Complete 2nd capture jump over B_02 to r2_c2
+      await tester.tap(find.byKey(const ValueKey('node_r2_c2')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('piece_B_02')), findsNothing);
+      expect(find.text('Lượt B'), findsOneWidget);
+      expect(find.text('Nước 2'), findsOneWidget);
+
+      // Verify capture history records both jumps
+      await tester.tap(find.text('Lịch sử (2)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Người chơi A (Đỏ) · Ăn B_01'), findsOneWidget);
+      expect(find.text('Người chơi A (Đỏ) · Ăn B_02 (liên tiếp)'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      // Undo restores B_02 and resumes chain for A_01
+      await tester.tap(find.text('Hoàn tác'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('piece_B_02')), findsOneWidget);
+      expect(find.text('Ăn tiếp A'), findsOneWidget);
+    });
   });
 }
 

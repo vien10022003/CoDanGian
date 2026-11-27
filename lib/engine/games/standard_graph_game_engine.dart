@@ -6,7 +6,7 @@ import '../models/game_state.dart';
 import '../models/piece.dart';
 import '../models/player_side.dart';
 
-/// Reusable rule implementation for graph-based adjacent-movement folk games.
+/// Reusable rule implementation for graph-based adjacent & jump-capture folk games.
 ///
 /// Subclasses supply board construction, initial piece placement, and optional
 /// [CaptureRule] and [WinConditionRule] strategies.
@@ -19,21 +19,61 @@ abstract class StandardAdjacentGameRules implements GameRules {
   final CaptureRule captureRule;
   final WinConditionRule winConditionRule;
 
-  @override
-  List<String> getLegalMoves(GameState state, String pieceId) {
-    if (state.isGameOver) return const <String>[];
-
+  GamePiece? _movablePieceFor(GameState state, String pieceId) {
+    if (state.isGameOver) return null;
     final piece = state.pieces[pieceId];
-    if (piece == null || piece.isCaptured) return const <String>[];
-    if (piece.owner != state.currentTurn) return const <String>[];
+    if (piece == null || piece.isCaptured) return null;
+    if (piece.owner != state.currentTurn) return null;
+    if (state.activeChainPieceId != null &&
+        state.activeChainPieceId != pieceId) {
+      return null;
+    }
+    return piece;
+  }
 
-    final neighbors = state.board.neighborsOf(piece.positionId);
-    final legalTargets = <String>[];
-    for (final neighborId in neighbors) {
-      if (state.isPositionEmpty(neighborId)) {
-        legalTargets.add(neighborId);
+  @override
+  List<CaptureMoveOption> getCaptureOptions(GameState state, String pieceId) {
+    final piece = _movablePieceFor(state, pieceId);
+    if (piece == null) return const <CaptureMoveOption>[];
+    return captureRule.getJumpCaptureOptions(state, piece);
+  }
+
+  @override
+  List<String> getCaptureMoves(GameState state, String pieceId) {
+    final options = getCaptureOptions(state, pieceId);
+    if (options.isEmpty) return const <String>[];
+    final targets = <String>[];
+    for (final opt in options) {
+      if (!targets.contains(opt.targetPositionId)) {
+        targets.add(opt.targetPositionId);
       }
     }
+    return List<String>.unmodifiable(targets);
+  }
+
+  @override
+  List<String> getLegalMoves(GameState state, String pieceId) {
+    final piece = _movablePieceFor(state, pieceId);
+    if (piece == null) return const <String>[];
+
+    final legalTargets = <String>[];
+
+    // Normal adjacent moves are allowed only outside an active capture chain.
+    if (!state.isChaining) {
+      for (final neighborId in state.board.neighborsOf(piece.positionId)) {
+        if (state.isPositionEmpty(neighborId)) {
+          legalTargets.add(neighborId);
+        }
+      }
+    }
+
+    for (final captureOption
+        in captureRule.getJumpCaptureOptions(state, piece)) {
+      if (!legalTargets.contains(captureOption.targetPositionId)) {
+        legalTargets.add(captureOption.targetPositionId);
+      }
+    }
+
     return List<String>.unmodifiable(legalTargets);
   }
 
@@ -56,6 +96,48 @@ abstract class StandardAdjacentGameRules implements GameRules {
 
   @override
   MoveResult applyMove(
+    GameState state,
+    String pieceId,
+    String targetPositionId,
+  ) {
+    final validationError = _validateMoveRequest(
+      state,
+      pieceId,
+      targetPositionId,
+    );
+    if (validationError != null) return validationError;
+
+    final piece = state.pieces[pieceId]!;
+    final jumpOption = _findMatchingJumpOption(state, piece, targetPositionId);
+
+    if (state.isChaining && jumpOption == null) {
+      return MoveResult.failure(
+        state: state,
+        error: MoveError.mustContinueCaptureChain,
+        errorMessage:
+            'Đang trong chuỗi ăn liên tiếp, phải chọn nước ăn tiếp theo.',
+      );
+    }
+
+    final isAdjacentMove =
+        state.board.areAdjacent(piece.positionId, targetPositionId);
+    if (jumpOption == null && !isAdjacentMove) {
+      return MoveResult.failure(
+        state: state,
+        error: MoveError.notAdjacent,
+        errorMessage: 'Không thể di chuyển đến vị trí không có đường nối.',
+      );
+    }
+
+    return _commitMove(
+      state: state,
+      piece: piece,
+      targetPositionId: targetPositionId,
+      jumpOption: jumpOption,
+    );
+  }
+
+  MoveResult? _validateMoveRequest(
     GameState state,
     String pieceId,
     String targetPositionId,
@@ -90,6 +172,15 @@ abstract class StandardAdjacentGameRules implements GameRules {
         errorMessage: 'Không thể di chuyển quân của đối phương.',
       );
     }
+    if (state.activeChainPieceId != null &&
+        state.activeChainPieceId != pieceId) {
+      return MoveResult.failure(
+        state: state,
+        error: MoveError.mustContinueCaptureChain,
+        errorMessage:
+            'Đang trong chuỗi ăn liên tiếp, chỉ được di chuyển quân ${state.activeChainPieceId}.',
+      );
+    }
     if (state.board.positionById(targetPositionId) == null) {
       return MoveResult.failure(
         state: state,
@@ -104,13 +195,6 @@ abstract class StandardAdjacentGameRules implements GameRules {
         errorMessage: 'Quân cờ đã ở vị trí đích.',
       );
     }
-    if (!state.board.areAdjacent(piece.positionId, targetPositionId)) {
-      return MoveResult.failure(
-        state: state,
-        error: MoveError.notAdjacent,
-        errorMessage: 'Không thể di chuyển đến vị trí không có đường nối.',
-      );
-    }
     if (!state.isPositionEmpty(targetPositionId)) {
       return MoveResult.failure(
         state: state,
@@ -118,27 +202,58 @@ abstract class StandardAdjacentGameRules implements GameRules {
         errorMessage: 'Chỉ được di chuyển đến vị trí đang trống.',
       );
     }
+    return null;
+  }
 
-    final updatedPieces = Map<String, GamePiece>.from(state.pieces);
-    updatedPieces[pieceId] = piece.copyWith(positionId: targetPositionId);
+  CaptureMoveOption? _findMatchingJumpOption(
+    GameState state,
+    GamePiece piece,
+    String targetPositionId,
+  ) {
+    for (final option in captureRule.getJumpCaptureOptions(state, piece)) {
+      if (option.targetPositionId == targetPositionId) {
+        return option;
+      }
+    }
+    return null;
+  }
+
+  MoveResult _commitMove({
+    required GameState state,
+    required GamePiece piece,
+    required String targetPositionId,
+    required CaptureMoveOption? jumpOption,
+  }) {
+    final movedPiece = piece.copyWith(positionId: targetPositionId);
+    final updatedPieces = Map<String, GamePiece>.from(state.pieces)
+      ..[piece.id] = movedPiece;
 
     final pendingMove = GameMove(
       moveNumber: state.moveHistory.length + 1,
-      pieceId: pieceId,
+      pieceId: piece.id,
       player: piece.owner,
       fromPositionId: piece.positionId,
       toPositionId: targetPositionId,
       previousTurn: state.currentTurn,
+      previousChainPieceId: state.activeChainPieceId,
     );
 
-    final stateAfterMove = state.copyWith(pieces: updatedPieces);
-    final capturedIds = captureRule.resolveCaptures(stateAfterMove, pendingMove);
+    final stateAfterMove = state.copyWith(
+      pieces: updatedPieces,
+      clearActiveChain: true,
+    );
+
+    final capturedIds = <String>[
+      ...?jumpOption?.capturedPieceIds,
+      for (final postId in captureRule.resolveCaptures(stateAfterMove, pendingMove))
+        if (!(jumpOption?.capturedPieceIds.contains(postId) ?? false)) postId,
+    ];
 
     final finalPieces = Map<String, GamePiece>.from(updatedPieces);
     for (final capturedId in capturedIds) {
-      final capturedPiece = finalPieces[capturedId];
-      if (capturedPiece != null && !capturedPiece.isCaptured) {
-        finalPieces[capturedId] = capturedPiece.copyWith(isCaptured: true);
+      final victim = finalPieces[capturedId];
+      if (victim != null && !victim.isCaptured) {
+        finalPieces[capturedId] = victim.copyWith(isCaptured: true);
       }
     }
 
@@ -150,22 +265,42 @@ abstract class StandardAdjacentGameRules implements GameRules {
       toPositionId: pendingMove.toPositionId,
       capturedPieceIds: capturedIds,
       previousTurn: pendingMove.previousTurn,
+      previousChainPieceId: pendingMove.previousChainPieceId,
     );
 
     final nextHistory = <GameMove>[...state.moveHistory, recordedMove];
     final stateWithCaptures = state.copyWith(
       pieces: finalPieces,
       moveHistory: nextHistory,
+      clearActiveChain: true,
     );
 
     final winEval = winConditionRule.evaluate(stateWithCaptures);
-    final nextState = winEval.isFinished
+    if (winEval.isFinished) {
+      return MoveResult.success(
+        state: stateWithCaptures.copyWith(
+          phase: GamePhase.finished,
+          winner: winEval.winner,
+          clearActiveChain: true,
+        ),
+        move: recordedMove,
+      );
+    }
+
+    final canContinueChain = capturedIds.isNotEmpty &&
+        captureRule.supportsMultiCaptureChain &&
+        captureRule.getJumpCaptureOptions(stateWithCaptures, movedPiece).isNotEmpty;
+
+    final nextState = canContinueChain
         ? stateWithCaptures.copyWith(
-            phase: GamePhase.finished,
-            winner: winEval.winner,
+            currentTurn: state.currentTurn,
+            activeChainPieceId: piece.id,
+            phase: GamePhase.playing,
+            clearWinner: true,
           )
         : stateWithCaptures.copyWith(
             currentTurn: state.nextPlayerAfter(state.currentTurn),
+            clearActiveChain: true,
             phase: GamePhase.playing,
             clearWinner: true,
           );
@@ -211,6 +346,8 @@ abstract class StandardAdjacentGameRules implements GameRules {
       pieces: restoredPieces,
       currentTurn: lastMove.previousTurn,
       moveHistory: restoredHistory,
+      activeChainPieceId: lastMove.previousChainPieceId,
+      clearActiveChain: lastMove.previousChainPieceId == null,
       phase: GamePhase.playing,
       clearWinner: true,
     );
@@ -242,6 +379,14 @@ class StandardGraphGameEngine implements GameEngine {
 
   @override
   GameState getGameState() => _state;
+
+  @override
+  List<String> getCaptureMoves(String pieceId) =>
+      _rules.getCaptureMoves(_state, pieceId);
+
+  @override
+  List<CaptureMoveOption> getCaptureOptions(String pieceId) =>
+      _rules.getCaptureOptions(_state, pieceId);
 
   @override
   List<String> getLegalMoves(String pieceId) =>
@@ -285,4 +430,3 @@ class StandardGraphGameEngine implements GameEngine {
   List<MoveCandidate> getAllLegalMoves() =>
       _rules.getAllLegalMoves(_state, _state.currentTurn);
 }
-
